@@ -26,20 +26,30 @@ trap { "ERROR: $_" | Out-File $Log; throw } # the elevated window closes on fail
 
 $Target = Join-Path $env:LOCALAPPDATA 'Programs\ZenitEngine'
 $Exe = Join-Path $Target 'ZenitEngine.exe'
+$Shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Zenit Engine.lnk'
 
 # Stop the running Engine so its files can be replaced or removed.
 Get-ScheduledTask -TaskPath '\Zenit\' -TaskName Engine -ErrorAction SilentlyContinue | Stop-ScheduledTask
-Get-CimInstance Win32_Process -Filter "Name = 'ZenitEngine.exe'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+Get-CimInstance Win32_Process -Filter "Name = 'ZenitEngine.exe' OR Name = 'ZenitEngine.App.exe'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 
 if ($Uninstall) {
     Unregister-ScheduledTask -TaskPath '\Zenit\' -TaskName Engine -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item $Target -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $Shortcut -Force -ErrorAction SilentlyContinue
     "Zenit Engine removed. Your settings in $env:LOCALAPPDATA\Zenit were kept." | Tee-Object -FilePath $Log
     return
 }
 
-dotnet publish (Join-Path $PSScriptRoot 'src\ZenitEngine') -c Release -r win-x64 --self-contained -o $Target -nologo -v q
-if ($LASTEXITCODE) { throw 'dotnet publish failed (is the .NET 10 SDK installed?)' }
+foreach ($project in 'ZenitEngine', 'ZenitEngine.App') {
+    dotnet publish (Join-Path $PSScriptRoot "src\$project") -c Release -r win-x64 --self-contained -o $Target -nologo -v q
+    if ($LASTEXITCODE) { throw "dotnet publish $project failed (is the .NET 10 SDK installed?)" }
+}
+
+# Start menu entry for the app.
+$link = (New-Object -ComObject WScript.Shell).CreateShortcut($Shortcut)
+$link.TargetPath = Join-Path $Target 'ZenitEngine.App.exe'
+$link.WorkingDirectory = $Target
+$link.Save()
 
 # The Engine runs elevated in this user's session at sign-in. Interactive logon type: no password is stored and
 # there is no UAC prompt at each sign-in. conhost --headless keeps the console app from opening a window, which
@@ -51,4 +61,4 @@ $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) 
 Register-ScheduledTask -TaskPath '\Zenit\' -TaskName Engine -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 Start-ScheduledTask -TaskPath '\Zenit\' -TaskName Engine
 
-"Zenit Engine installed in $Target and running." | Tee-Object -FilePath $Log
+"Zenit Engine installed in $Target and running. Open it from the Start menu." | Tee-Object -FilePath $Log

@@ -4,8 +4,9 @@
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
 **Drivers, temperatures and performance for gaming laptops, from official sources only.**
-Free and open source. Early version: it works today from the command line on Alienware laptops;
-a desktop app and more brands are next.
+Free and open source. Early version, tested on Alienware laptops; more brands are next.
+
+![Zenit Engine](docs/screenshot.png)
 
 My Alienware 16X Aurora sat at **104 °C doing nothing** for two days, fans roaring, and the manufacturer's app
 said nothing. Zenit Engine found the cause (a power plan that never let the CPU slow down, plus a stuck state)
@@ -49,9 +50,11 @@ cd zenit-engine
 ```
 
 It publishes a self-contained build to `%LOCALAPPDATA%\Programs\ZenitEngine` and registers the Engine to start
-at sign-in. To remove it: `.\install.ps1 -Uninstall` (your per-game profiles in `%LOCALAPPDATA%\Zenit` are kept).
+at sign-in, and adds **Zenit Engine** to the Start menu. To remove it: `.\install.ps1 -Uninstall` (your per-game profiles in `%LOCALAPPDATA%\Zenit` are kept).
 
-## Use
+## Command line
+
+Everything the app shows is also available as JSON:
 
 ```powershell
 $z = "$env:LOCALAPPDATA\Programs\ZenitEngine\ZenitEngine.exe"

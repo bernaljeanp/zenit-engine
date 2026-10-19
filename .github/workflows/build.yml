@@ -17,6 +17,8 @@ jobs:
         with:
           dotnet-version: "10.0.x"
       - name: Build
-        run: dotnet build src/ZenitEngine -c Release -nologo
+        run: |
+          dotnet build src/ZenitEngine -c Release -nologo
+          dotnet build src/ZenitEngine.App -c Release -nologo
       - name: Self-test
         run: dotnet run --project src/ZenitEngine -c Release --no-build -- --selftest
