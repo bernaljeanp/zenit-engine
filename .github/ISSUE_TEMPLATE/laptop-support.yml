@@ -1,0 +1,33 @@
+name: Laptop support request
+description: Ask for your laptop to be supported, or report that it works.
+title: "[Laptop] <brand and model>"
+labels: ["laptop-support"]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Brand and exact model
+      placeholder: e.g. Lenovo Legion Pro 7i Gen 10 (16IAX10)
+    validations:
+      required: true
+  - type: input
+    id: bios
+    attributes:
+      label: BIOS version
+      description: "PowerShell: (Get-CimInstance Win32_BIOS).SMBIOSBIOSVersion"
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: "PowerShell: [Environment]::OSVersion.Version"
+  - type: textarea
+    id: thermal
+    attributes:
+      label: Output of ZenitEngine --thermal
+      description: Paste it even if it shows an error; the error tells us which interface is missing.
+      render: json
+  - type: textarea
+    id: notes
+    attributes:
+      label: What the manufacturer's app lets you control
+      description: Thermal profiles, fan curves, G-Mode or turbo buttons, battery limits...
