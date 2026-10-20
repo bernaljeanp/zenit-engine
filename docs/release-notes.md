@@ -6,7 +6,13 @@ tray. Uninstall from Settings > Apps.
 > with **Smart App Control** on, Windows blocks the installer; install from source there (see the README). Check the
 > download with `sha256sum -c SHA256SUMS.txt`; every release is built from this repository by GitHub Actions.
 
-**What's new in 0.1.4**
+**What's new in 0.1.5**
+
+- The diagnosis judges heat that holds, not one-second spikes: it looks at the lowest CPU reading of the last 15 s.
+  Recent laptop CPUs jump to 90-100 °C for a second whenever a core boosts, which is normal, and 0.1.4 could raise a
+  false "heating the CPU" alarm for it. The dial still shows the live reading.
+
+**0.1.4**
 
 - **Battery charge limit** on Dell and Alienware laptops: stop charging at **80 %** or **60 %** (charging resumes 5
   points below), or keep Dell's Adaptive mode. Saved in the BIOS through Dell's BIOS settings interface, so it holds
