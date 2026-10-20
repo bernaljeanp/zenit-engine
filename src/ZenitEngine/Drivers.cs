@@ -5,8 +5,13 @@ using System.Management;
 // catalog offers for this machine's exact hardware IDs, which Install() applies.
 static class Drivers
 {
+    // LegacyDriver: Windows reports the device "Degraded" only because its driver is a legacy (non-Plug and Play) kernel
+    // driver (DN_LEGACY_DRIVER), not because anything failed.
     public record Device(string Name, string Class, string Status, int ProblemCode, string? DriverVersion,
-        DateTime? DriverDate, string? Provider, string? HardwareId);
+        DateTime? DriverDate, string? Provider, string? HardwareId, bool LegacyDriver = false)
+    {
+        [System.Text.Json.Serialization.JsonIgnore] public string? Id { get; init; }
+    }
     public record Update(string Title, string? Class, string? Model, DateTime? Date, string? Provider, string? HardwareId);
     public record Report(Device[] Problems, Device[] Outdated, Update[] Available, string? UpdateError, Dell.Package[] Maker, string? MakerError);
 
@@ -35,11 +40,11 @@ static class Drivers
                     d?["DriverVersion"] as string,
                     CimDate(d?["DriverDate"] as string),
                     d?["DriverProviderName"] as string,
-                    d?["HardWareID"] as string);
+                    d?["HardWareID"] as string) { Id = (string)e["PNPDeviceID"] };
             })
             .ToList();
 
-        var problems = devices.Where(IsProblem).ToArray();
+        var problems = devices.Where(IsProblem).Select(d => d with { LegacyDriver = IsLegacyDriver(d.Id) }).ToArray();
         var outdated = devices.Where(d => IsOutdated(d, DateTime.Now)).OrderBy(d => d.DriverDate).ToArray();
 
         Update[] available = [];
@@ -54,6 +59,22 @@ static class Drivers
         }
         return new(problems, outdated, available, error, maker, makerError);
     }
+
+    // DN_LEGACY_DRIVER (cfg.h, 0x1000) with no problem code: the device runs on a legacy-style kernel driver, which WMI
+    // and Get-PnpDevice show as "Degraded". Intel's IPF extension providers (SoC Thermal, PMT, PerfMon) are built this
+    // way; their drivers (PRI-Driver, IntelTACD) run normally. Seen on a 16X Aurora with IPF 2.3.20306.
+    static bool IsLegacyDriver(string? instanceId)
+    {
+        const uint DN_LEGACY_DRIVER = 0x1000;
+        return instanceId is not null && CM_Locate_DevNode(out var node, instanceId, 0) == 0
+            && CM_Get_DevNode_Status(out var status, out var problem, node, 0) == 0
+            && (status & DN_LEGACY_DRIVER) != 0 && problem == 0;
+    }
+
+    [System.Runtime.InteropServices.DllImport("cfgmgr32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern int CM_Locate_DevNode(out uint node, string id, int flags);
+    [System.Runtime.InteropServices.DllImport("cfgmgr32.dll")]
+    static extern int CM_Get_DevNode_Status(out uint status, out uint problem, uint node, int flags);
 
     // Anything Windows doesn't call OK: an error code (missing driver, failed to start, disabled...)
     // or a non-OK status such as "Degraded", which drivers report when part of their function isn't working.

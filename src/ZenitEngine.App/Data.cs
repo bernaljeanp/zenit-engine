@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 record Fan(int Id, double Rpm, double MaxRpm);
 record Status(string Profile, string[] Profiles, Fan[] Fans, Dictionary<string, double> TempsC);
-record Device(string Name, string Class, string Status, int ProblemCode, string? DriverVersion, string? Provider);
+record Device(string Name, string Class, string Status, int ProblemCode, string? DriverVersion, string? Provider, bool LegacyDriver = false);
 record DriverUpdate(string Title, string? Class, string? Provider);
 record MakerPackage(string Name, string Category, string Version, string Installed, string Device, long Size);
 record DriverReport(Device[] Problems, Device[] Outdated, DriverUpdate[] Available, string? UpdateError, MakerPackage[]? Maker, string? MakerError);
@@ -158,10 +158,11 @@ static class Diagnosis
         if (drivers is not null)
         {
             // Devices with the same problem become one line (three Intel platform providers, one fix).
+            // A legacy-style driver that runs fine is information, not a fault.
             foreach (var g in drivers.Problems.GroupBy(Explain))
                 f.Add(g.Count() == 1
-                    ? new(Severity.Warning, g.First().Name, g.Key)
-                    : new(Severity.Warning, Lang.T($"{g.Count()} drivers report the same problem", $"{g.Count()} controladores informan el mismo problema"), string.Join(", ", g.Select(d => d.Name)) + ". " + g.Key));
+                    ? new(g.All(d => d.LegacyDriver) ? Severity.Info : Severity.Warning, g.First().Name, g.Key)
+                    : new(g.All(d => d.LegacyDriver) ? Severity.Info : Severity.Warning, Lang.T($"{g.Count()} drivers report the same problem", $"{g.Count()} controladores informan el mismo problema"), string.Join(", ", g.Select(d => d.Name)) + ". " + g.Key));
             if (drivers.Outdated.Length > 0)
                 f.Add(new(Severity.Info, Lang.T($"{drivers.Outdated.Length} device drivers are over three years old", $"{drivers.Outdated.Length} controladores tienen más de tres años"),
                     string.Join(", ", drivers.Outdated.Take(3).Select(d => d.Name)) + Lang.T(". Look for newer versions on the laptop maker's support page.", ". Busca versiones nuevas en la página de soporte del fabricante.")));
@@ -215,7 +216,10 @@ static class Diagnosis
             : list[0];
     }
 
-    static string Explain(Device d) => d.Status.Equals("Degraded", StringComparison.OrdinalIgnoreCase)
+    static string Explain(Device d) => d.LegacyDriver
+        ? Lang.T("Nothing to fix: Windows labels these \"Degraded\" only because the maker built them with a legacy-style kernel driver. The driver is running normally. Only the maker can change how it is built.",
+                 "No hay nada que reparar: Windows los marca como \"Degraded\" solo porque el fabricante los hizo con un controlador de kernel de estilo antiguo. El controlador funciona con normalidad. Solo el fabricante puede cambiar cómo está hecho.")
+        : d.Status.Equals("Degraded", StringComparison.OrdinalIgnoreCase)
         ? Lang.T("The driver is loaded but part of it isn't working. This usually clears after updating the chipset and platform drivers from the laptop maker.",
                  "El controlador está cargado pero una parte no funciona. Suele resolverse al actualizar los controladores de chipset y plataforma del fabricante.")
         : d.ProblemCode switch
