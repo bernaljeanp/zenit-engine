@@ -5,10 +5,8 @@ using System.Management;
 // catalog offers for this machine's exact hardware IDs, which Install() applies.
 static class Drivers
 {
-    // LegacyDriver: Windows reports the device "Degraded" only because its driver is a legacy (non-Plug and Play) kernel
-    // driver (DN_LEGACY_DRIVER), not because anything failed.
     public record Device(string Name, string Class, string Status, int ProblemCode, string? DriverVersion,
-        DateTime? DriverDate, string? Provider, string? HardwareId, bool LegacyDriver = false)
+        DateTime? DriverDate, string? Provider, string? HardwareId)
     {
         [System.Text.Json.Serialization.JsonIgnore] public string? Id { get; init; }
     }
@@ -44,7 +42,8 @@ static class Drivers
             })
             .ToList();
 
-        var problems = devices.Where(IsProblem).Select(d => d with { LegacyDriver = IsLegacyDriver(d.Id) }).ToArray();
+        // A device on a legacy-style driver that runs fine is not a problem, however Windows labels it.
+        var problems = devices.Where(d => IsProblem(d) && !IsLegacyDriver(d.Id)).ToArray();
         var outdated = devices.Where(d => IsOutdated(d, DateTime.Now)).OrderBy(d => d.DriverDate).ToArray();
 
         Update[] available = [];
