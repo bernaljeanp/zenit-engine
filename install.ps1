@@ -41,6 +41,10 @@ if ($Uninstall) {
 }
 
 & $Task -Stop # files in use can't be replaced
+# Start from an empty folder: publish copies a file only when it is newer than the one in place, and a previous
+# install can leave files that look newer (installer timestamps), which would keep stale DLLs next to the new exes.
+# The setup's uninstaller (unins000.*) stays: Settings > Apps uses it.
+Get-ChildItem $Target -Exclude 'unins*' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 foreach ($project in 'ZenitEngine', 'ZenitEngine.App') {
     dotnet publish (Join-Path $PSScriptRoot "src\$project") -c Release -r win-x64 --self-contained -o $Target -nologo -v q
     if ($LASTEXITCODE) { throw "dotnet publish $project failed (is the .NET 10 SDK installed?)" }

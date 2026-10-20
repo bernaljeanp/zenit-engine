@@ -32,6 +32,8 @@ WizardStyle=modern
 Compression=lzma2/ultra64
 SolidCompression=yes
 CloseApplications=no
+; The build machine runs on UTC: record file times as UTC so installed files don't get timestamps in the future.
+TimeStampsInUTC=yes
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
