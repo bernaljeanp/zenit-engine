@@ -56,6 +56,23 @@ sealed class MainWindow : Window
     readonly Slider brightness = new() { Minimum = 0, Maximum = 100, Value = 100 };
     readonly TextBlock lightNote = T(12.5, Palette.Muted, wrap: true);
 
+    readonly StackPanel batteryChoices = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
+    readonly TextBlock batteryNote = T(12.5, Palette.Muted, wrap: true);
+    readonly ToggleSwitch autoPower = new() { OnContent = "", OffContent = "" }, startup = new() { OnContent = "", OffContent = "" };
+    readonly StackPanel languageChoices = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
+    readonly StackPanel gameRows = new() { Spacing = 10 };
+    BatteryCharge? battery;
+    readonly ScrollViewer scroller = new();
+
+    // The settings are the last panel: scroll to the end once the layout has its size, and again once the game list
+    // has loaded (it makes the panel taller).
+    bool settingsShown;
+    public void ShowSettings()
+    {
+        settingsShown = true;
+        Dispatcher.UIThread.Post(scroller.ScrollToEnd, DispatcherPriority.Background);
+    }
+
     readonly StackPanel driverList = new() { Spacing = 12 };
     readonly TextBlock driverStatus = T(13.5, Palette.Muted, wrap: true);
 
@@ -79,6 +96,9 @@ sealed class MainWindow : Window
     {
         Title = "Zenit Engine";
         Width = 1380; Height = 940; MinWidth = 1120; MinHeight = 720;
+        // Never taller than the screen above the taskbar (at 150 % scaling 940 doesn't fit on a 1080p-class panel).
+        if (Screens.Primary is { } screen) Height = Math.Max(MinHeight, Math.Min(Height, screen.WorkingArea.Height / screen.Scaling - 32));
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = Brushes.Black;
 
         // ---- header
@@ -89,7 +109,9 @@ sealed class MainWindow : Window
         };
         gameChip.Child = Row3(new Border { Width = 7, Height = 7, CornerRadius = new CornerRadius(4), Background = Palette.Hot, VerticalAlignment = VerticalAlignment.Center }, Caps(Lang.T("IN GAME", "EN JUEGO")), gameText);
         enginePill.Child = Row3(engineDot, engineText, null);
-        var statusBar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center, Children = { gameChip, enginePill } };
+        var settingsButton = Button(Lang.T("Settings", "Ajustes"), ShowSettings);
+        settingsButton.Padding = new Thickness(14, 6);
+        var statusBar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center, Children = { gameChip, enginePill, settingsButton } };
         DockPanel.SetDock(statusBar, Dock.Right);
         var header = new DockPanel { Margin = new Thickness(36, 22, 36, 4), Children = { statusBar, brand } };
 
@@ -163,10 +185,39 @@ sealed class MainWindow : Window
         driverActions.Children.Add(Button(Lang.T("Update drivers", "Actualizar controladores"), () => _ = InstallDrivers(), primary: true));
         var driverBody = new StackPanel { Spacing = 16, Children = { driverStatus, driverList } };
 
+        // ---- settings: stored in settings.json, the BIOS (battery), the Run key (startup) and game-profiles.json
+        autoPower.IsChecked = Settings.Current.AutoPowerProfile;
+        autoPower.IsCheckedChanged += (_, _) => (Settings.Current with { AutoPowerProfile = autoPower.IsChecked == true }).Save();
+        startup.IsChecked = Machine.StartsWithWindows();
+        startup.IsCheckedChanged += (_, _) => Machine.StartWithWindows(startup.IsChecked == true);
+        Choices(languageChoices, [("", Lang.T("Windows", "Windows")), ("en", "English"), ("es", "Español")], Settings.Current.Language ?? "", id =>
+        {
+            (Settings.Current with { Language = id == "" ? null : id }).Save();
+            Dispatcher.UIThread.Post(((App)Application.Current!).Reload); // rebuilt in the new language
+        });
+        var settingsLeft = new StackPanel
+        {
+            Spacing = 26,
+            Children =
+            {
+                Setting(Lang.T("BATTERY CHARGE LIMIT", "LÍMITE DE CARGA"), batteryChoices, batteryNote),
+                Toggle(autoPower, Lang.T("Profile by power source", "Perfil según la alimentación"),
+                       Lang.T("Balanced+ on the charger, Balanced on battery, switched when you plug or unplug.", "Equilibrado+ con cargador y Equilibrado con batería, al enchufar o desenchufar.")),
+                Toggle(startup, Lang.T("Start with Windows", "Iniciar con Windows"),
+                       Lang.T("In the tray, with the temperatures in its tooltip.", "En la bandeja, con las temperaturas al pasar el ratón.")),
+                Setting(Lang.T("LANGUAGE", "IDIOMA"), languageChoices, null),
+            },
+        };
+        var settingsRight = Setting(Lang.T("PROFILE PER GAME", "PERFIL POR JUEGO"), gameRows,
+            T(12.5, Palette.Muted, Lang.T("Auto: Performance on the charger, Balanced+ on battery.", "Auto: Rendimiento con cargador, Equilibrado+ con batería."), wrap: true));
+        var settingsBody = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 48 };
+        Grid.SetColumn(settingsRight, 1);
+        settingsBody.Children.AddRange([settingsLeft, settingsRight]);
+
         // ---- layout
         var content = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("*,460"), RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,460"), RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto,Auto"),
             ColumnSpacing = 22, RowSpacing = 22, Margin = new Thickness(36, 18, 36, 40),
         };
         Place(content, Panel(null, hero, padding: new Thickness(18, 14, 30, 14)), 0, 0, 2);
@@ -175,17 +226,19 @@ sealed class MainWindow : Window
         Place(content, Panel(Lang.T("COOLING", "REFRIGERACIÓN"), fansBody), 2, 1, 1);
         Place(content, Panel(Lang.T("DRIVERS", "CONTROLADORES"), driverBody, driverActions), 3, 0, 1);
         Place(content, Panel(Lang.T("LIGHTING", "ILUMINACIÓN"), lightBody), 3, 1, 1);
+        Place(content, Panel(Lang.T("SETTINGS", "AJUSTES"), settingsBody), 4, 0, 2);
 
         var page = new DockPanel();
         DockPanel.SetDock(header, Dock.Top);
-        page.Children.AddRange([header, new ScrollViewer { Content = content }]);
+        page.Children.AddRange([header, scroller]);
+        scroller.Content = content;
         Content = new Grid { Children = { ambient, page } };
 
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         timer.Tick += (_, _) => Poll();
         // ponytail: a fixed 30 fps budget instead of the display's refresh rate; a thermal monitor must not heat the laptop.
         var frames = new DispatcherTimer(TimeSpan.FromMilliseconds(33), DispatcherPriority.Render, (_, _) => Frame());
-        Opened += (_, _) => { frames.Start(); Poll(); timer.Start(); _ = ScanDrivers(false); _ = LoadLights(); };
+        Opened += (_, _) => { frames.Start(); Poll(); timer.Start(); _ = ScanDrivers(false); _ = LoadLights(); _ = LoadSettings(); };
         Closed += (_, _) => { closed = true; timer.Stop(); frames.Stop(); };
     }
 
@@ -367,7 +420,7 @@ sealed class MainWindow : Window
     // ---- lighting
 
     // Curated, not a rainbow picker: colors that read well through keycaps and the logo diffuser.
-    static readonly (string Name, string Hex)[] LightPresets =
+    static (string Name, string Hex)[] LightPresets =>
     [
         ("Aurora", "AURORA"), ("Zenith", "8EC5FF"), ("Ice", "E6F2FF"), ("Ember", "FF5A1F"), ("Crimson", "FF1E3C"),
         ("Solar", "FFB000"), ("Plasma", "B04BFF"), ("Toxic", "39FF88"), (Lang.T("Off", "Apagado"), "000000"),
@@ -451,6 +504,102 @@ sealed class MainWindow : Window
         await Task.Run(() => Machine.SetProfile(profile));
         shownProfiles = null;
         Poll();
+    }
+
+    // ---- settings
+
+    async Task LoadSettings()
+    {
+        battery = await Task.Run(() => { try { return Machine.Battery(); } catch { return null; } });
+        ShowBattery();
+        var (games, chosen) = await Task.Run(() =>
+        {
+            try { return (Machine.Games(), Machine.GameProfiles()); }
+            catch { return (Array.Empty<GameEntry>(), new Dictionary<string, string>()); }
+        });
+        ShowGames(games, chosen);
+        if (settingsShown) ShowSettings();
+    }
+
+    // Zenit offers Dell's Adaptive mode and two fixed limits; a mode set elsewhere (Dell's BIOS setup, Power Manager)
+    // shows as its own choice so the current state is never hidden.
+    void ShowBattery()
+    {
+        if (battery is null)
+        {
+            batteryChoices.Children.Clear();
+            batteryNote.Text = Lang.T("Not available here: it needs the Engine running on a Dell or Alienware laptop whose BIOS offers charge settings.",
+                                      "No disponible aquí: necesita el Engine en marcha en un Dell o Alienware cuya BIOS ofrezca ajustes de carga.");
+            return;
+        }
+        var current = battery.Mode switch { "Custom" => $"{battery.Stop}", "Adaptive" => "adaptive", var mode => mode };
+        var options = new List<(string, string)> { ("adaptive", Lang.T("Adaptive", "Adaptativo")), ("80", "80 %"), ("60", "60 %") };
+        if (!options.Any(o => o.Item1 == current))
+            options.Add((current, battery.Mode switch
+            {
+                "Custom" => $"{battery.Stop} %", "Standard" => Lang.T("Standard", "Estándar"), "Express" => "ExpressCharge",
+                "PrimAcUse" => Lang.T("Mainly on AC", "Uso con CA"), var mode => mode,
+            }));
+        Choices(batteryChoices, [.. options], current, id => _ = SetBattery(id));
+        batteryNote.Text = battery.Mode == "Custom"
+            ? Lang.T($"Charging stops at {battery.Stop} % and resumes below {battery.Start} %. A battery that isn't kept full wears more slowly. Saved in the laptop's BIOS.",
+                     $"La carga se detiene en {battery.Stop} % y se reanuda bajo {battery.Start} %. Una batería que no se mantiene llena se desgasta más lento. Se guarda en la BIOS del portátil.")
+            : Lang.T("Adaptive is Dell's default: it picks the limit from how you use the laptop. 80 % suits a laptop that lives on the charger. Saved in the BIOS.",
+                     "Adaptativo es el modo de Dell: elige el límite según cómo usas el portátil. 80 % conviene si vive enchufado. Se guarda en la BIOS.");
+    }
+
+    async Task SetBattery(string id)
+    {
+        if (id is not ("adaptive" or "80" or "60")) return; // a mode set elsewhere is only shown
+        batteryNote.Text = Lang.T("Saving in the BIOS…", "Guardando en la BIOS…");
+        var error = await Task.Run(() => Machine.SetBattery(id));
+        battery = await Task.Run(() => { try { return Machine.Battery(); } catch { return null; } });
+        ShowBattery();
+        if (error is not null) batteryNote.Text = error;
+    }
+
+    void ShowGames(GameEntry[] games, Dictionary<string, string> chosen)
+    {
+        gameRows.Children.Clear();
+        if (games.Length == 0)
+        {
+            gameRows.Children.Add(T(13.5, Palette.Muted, Lang.T("No installed games found yet.", "Aún no se encontraron juegos instalados."), wrap: true));
+            return;
+        }
+        string[] ids = ["auto", "performance", "balanced-performance", "balanced", "quiet", "cool"];
+        foreach (var game in games.DistinctBy(g => g.Id).OrderBy(g => g.Title, StringComparer.CurrentCultureIgnoreCase))
+        {
+            var box = new ComboBox
+            {
+                Width = 200, ItemsSource = ids.Select(id => id == "auto" ? "Auto" : ProfileName(id)).ToArray(),
+                SelectedIndex = Math.Max(0, Array.IndexOf(ids, chosen.GetValueOrDefault(game.Id) ?? "auto")),
+            };
+            box.SelectionChanged += (_, _) => { var id = ids[box.SelectedIndex]; _ = Task.Run(() => Machine.SetGameProfile(game.Id, id)); };
+            var title = T(14, Palette.Ink, game.Title);
+            title.TextTrimming = TextTrimming.CharacterEllipsis;
+            title.VerticalAlignment = VerticalAlignment.Center;
+            gameRows.Children.Add(new DockPanel { Children = { Docked(box, Dock.Right, new Thickness(16, 0, 0, 0)), title } });
+        }
+    }
+
+    // A row of choices: the selected one is the lit button.
+    static void Choices(StackPanel host, (string Id, string Label)[] options, string selected, Action<string> pick)
+    {
+        host.Children.Clear();
+        foreach (var (id, label) in options) host.Children.Add(Button(label, () => pick(id), primary: id == selected));
+    }
+
+    static Control Setting(string title, Control body, Control? note)
+    {
+        var stack = new StackPanel { Spacing = 12, Children = { Caps(title), body } };
+        if (note is not null) stack.Children.Add(note);
+        return stack;
+    }
+
+    static Control Toggle(ToggleSwitch toggle, string title, string detail)
+    {
+        var text = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center, Children = { T(14.5, Palette.Ink, title), T(13, Palette.Muted, detail, wrap: true) } };
+        return new DockPanel { Children = { Docked(toggle, Dock.Right, new Thickness(24, 0, 0, 0)), text } };
     }
 
     // ---- drivers

@@ -18,6 +18,11 @@
     <AvaloniaResource Include="Assets\zenit.ico" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Shared with the Engine: the language and the settings file both processes read. -->
+    <Compile Include="..\ZenitEngine\Lang.cs" Link="Lang.cs" />
+    <Compile Include="..\ZenitEngine\Settings.cs" Link="Settings.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Builds ZenitEngine.exe next to the app; they talk through the Engine pipe and the CLI's JSON, not shared types. -->
     <ProjectReference Include="..\ZenitEngine\ZenitEngine.csproj" />
   </ItemGroup>

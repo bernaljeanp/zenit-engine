@@ -40,7 +40,9 @@ static class GameWatcher
                 foreach (var pid in alive.Where(pid => !known.ContainsKey(pid))) known[pid] = Match(pid, games);
 
                 var battery = ThermalPolicy.OnBattery();
-                if (battery != onBattery)
+                // Turned off in the settings: nothing follows the charger. Turned back on: applied at once, silently.
+                if (!Settings.Current.AutoPowerProfile) onBattery = null;
+                else if (battery != onBattery)
                 {
                     var first = onBattery is null;
                     onBattery = battery;

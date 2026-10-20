@@ -14,6 +14,8 @@ record InstallResult(string[] Installed, string[] Failed, bool RebootRequired, b
 record LightState(string Color, int Brightness);
 record Notice(int Seq, string Title, string Detail);
 record PowerPlan(string Name, int MinProcessorAc);
+record BatteryCharge(string Mode, int Start, int Stop);
+record GameEntry(string Id, string Title);
 enum Severity { Good, Info, Warning, Critical }
 record Hog(string Name, int Pid, double Cores);
 // End: a process the user can stop from the diagnosis.
@@ -45,6 +47,47 @@ static class Machine
     public static string? SetLights(string color, int brightness) =>
         Ask($"lights {color} {brightness}") is { } json && json.Contains("\"ok\"") ? null
             : Lang.T("The lighting controller didn't answer. It needs the Engine running on an Alienware laptop with AlienFX lighting.", "El controlador de luces no respondió. Necesita el Engine en marcha en un Alienware con luces AlienFX.");
+
+    // The BIOS charge settings (Dell and Alienware), through the Engine. Null where the laptop has none.
+    public static BatteryCharge? Battery() =>
+        Ask("battery") is { } json && !json.Contains("\"error\"") ? JsonSerializer.Deserialize<BatteryCharge>(json, Json) : null;
+
+    // "adaptive" or a limit in %. Null when applied, otherwise what went wrong.
+    public static string? SetBattery(string value) => Ask($"battery {value}") switch
+    {
+        null => Lang.T("The Engine isn't running.", "El Engine no está en marcha."),
+        var json when json.Contains("\"ok\"") => null,
+        var json => JsonDocument.Parse(json).RootElement.TryGetProperty("error", out var e) ? e.GetString() : json,
+    };
+
+    // Installed games, from the Engine's catalog (the same list the game watcher uses).
+    public static GameEntry[] Games() =>
+        File.Exists(EngineExe) && Run(EngineExe) is var json && json.TrimStart().StartsWith('[')
+            ? JsonSerializer.Deserialize<GameEntry[]>(json, Json)! : [];
+
+    static readonly string GameProfilesFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zenit", "game-profiles.json");
+
+    public static Dictionary<string, string> GameProfiles() =>
+        File.Exists(GameProfilesFile) ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(GameProfilesFile)) ?? [] : [];
+
+    // "auto" goes back to the default: Performance on the charger, Balanced+ on battery.
+    public static void SetGameProfile(string gameId, string profile) => Run(EngineExe, "--game-profile", gameId, profile);
+
+    const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+
+    public static bool StartsWithWindows()
+    {
+        using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKey);
+        return key?.GetValue("Zenit Engine") is not null;
+    }
+
+    // The same entry the installer writes: the app in the tray at sign-in.
+    public static void StartWithWindows(bool on)
+    {
+        using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RunKey);
+        if (on) key.SetValue("Zenit Engine", $"\"{Environment.ProcessPath}\" --tray");
+        else key.DeleteValue("Zenit Engine", false);
+    }
 
     // Installing needs admin, so the Engine does it. Throws with the Engine's message on failure.
     public static InstallResult InstallDrivers()
@@ -89,14 +132,14 @@ static class Machine
     {
         var name = Regex.Match(Run("powercfg", "/getactivescheme"), @"\((.+)\)").Groups[1].Value;
         // The query lists minimum, maximum and increment, then the AC and DC values: AC is the second to last.
-        var hex = Regex.Matches(Run("powercfg", "/query SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN"), "0x[0-9a-fA-F]{8}");
+        var hex = Regex.Matches(Run("powercfg", "/query", "SCHEME_CURRENT", "SUB_PROCESSOR", "PROCTHROTTLEMIN"), "0x[0-9a-fA-F]{8}");
         return hex.Count >= 2 ? new PowerPlan(name, Convert.ToInt32(hex[^2].Value, 16)) : null;
     }
 
     public static DriverReport? Drivers(bool online)
     {
         if (!File.Exists(EngineExe)) return null;
-        var json = Run(EngineExe, online ? "--drivers" : "--drivers --offline");
+        var json = (online ? Run(EngineExe, "--drivers") : Run(EngineExe, "--drivers", "--offline"));
         return json.TrimStart().StartsWith('{') ? JsonSerializer.Deserialize<DriverReport>(json, Json) : null;
     }
 
@@ -116,9 +159,15 @@ static class Machine
         return top;
     }
 
-    static string Run(string file, string args)
+    // Arguments passed one by one: game IDs can hold spaces ("custom:Gran Turismo 4").
+    static string Run(string file, params string[] args)
     {
-        var psi = new ProcessStartInfo(file, args) { RedirectStandardOutput = true, CreateNoWindow = true, UseShellExecute = false };
+        // The Engine writes UTF-8 ("The Sims™ 4"); powercfg writes the console code page.
+        var psi = new ProcessStartInfo(file, args)
+        {
+            RedirectStandardOutput = true, CreateNoWindow = true, UseShellExecute = false,
+            StandardOutputEncoding = file == EngineExe ? System.Text.Encoding.UTF8 : null,
+        };
         using var p = Process.Start(psi)!;
         var output = p.StandardOutput.ReadToEnd();
         p.WaitForExit();

@@ -1,8 +1,10 @@
 using System.Globalization;
 
-// Windows' display language picks Spanish or English; anything else falls back to English.
+// Spanish or English: the language picked in Zenit's settings, otherwise Windows' display language (anything but
+// Spanish falls back to English). Compiled into both projects.
 static class Lang
 {
-    public static readonly bool Es = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "es";
+    static readonly bool WindowsEs = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "es";
+    public static bool Es => Settings.Current.Language switch { "es" => true, "en" => false, _ => WindowsEs };
     public static string T(string en, string es) => Es ? es : en;
 }

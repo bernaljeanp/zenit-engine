@@ -122,11 +122,13 @@ static class ThermalPolicy
     public static Dictionary<string, string> Load() =>
         File.Exists(StorePath) ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(StorePath)) ?? [] : [];
 
+    // "auto" forgets the choice: the game goes back to the default above.
     public static void Remember(string gameId, string profile)
     {
-        if (!Thermal.Known(profile)) throw new ArgumentException($"unknown profile '{profile}'");
+        if (profile != "auto" && !Thermal.Known(profile)) throw new ArgumentException($"unknown profile '{profile}'");
         var chosen = Load(); // a corrupt file throws here instead of being silently overwritten
-        chosen[gameId] = profile;
+        if (profile == "auto") chosen.Remove(gameId);
+        else chosen[gameId] = profile;
         Directory.CreateDirectory(Path.GetDirectoryName(StorePath)!);
         File.WriteAllText(StorePath, JsonSerializer.Serialize(chosen));
     }

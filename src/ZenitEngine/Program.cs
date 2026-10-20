@@ -262,6 +262,8 @@ static class Catalog
         Check(ThermalPolicy.For("xbox:x", false, chosen) == "performance", "AC default");
         Check(ThermalPolicy.For("xbox:x", true, chosen) == "balanced-performance", "battery default");
         Check(ThermalPolicy.Everyday(false) == "balanced-performance" && ThermalPolicy.Everyday(true) == "balanced", "everyday profile by power source");
+        Check(Battery.Thresholds(80) == (75, 80) && Battery.Thresholds(55) == (50, 55) && Battery.Thresholds(40) == (50, 55) && Battery.Thresholds(100) == (95, 100), "charge limit within the BIOS ranges");
+        Check(Settings.Parse("{}") == new Settings(true, null) && Settings.Parse("""{"AutoPowerProfile":false,"Language":"es"}""") is { AutoPowerProfile: false, Language: "es" }, "settings defaults");
 
         var riotYaml = "product_install_full_path: \"C:/Riot Games/VALORANT/live\"\nproduct_install_root: \"C:/Riot Games\"\nshortcut_name: VALORANT.lnk\n";
         Check(RiotProduct("valorant.live", riotYaml, @"C:\RC\RiotClientServices.exe") is

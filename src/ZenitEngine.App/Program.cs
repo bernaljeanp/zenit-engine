@@ -20,11 +20,12 @@ sealed class App : Application
     public static bool StartHidden;
     public static EventWaitHandle? ShowSignal;
 
-    static readonly (string Id, string Name)[] TrayProfiles =
+    static (string Id, string Name)[] TrayProfiles =>
         [("performance", Lang.T("Performance", "Rendimiento")), ("balanced-performance", Lang.T("Balanced+", "Equilibrado+")), ("balanced", Lang.T("Balanced", "Equilibrado")),
          ("quiet", Lang.T("Quiet", "Silencioso")), ("cool", Lang.T("Cool", "Fresco"))];
 
     MainWindow? window;
+    IClassicDesktopStyleApplicationLifetime? desktop;
     WindowIcon? icon;
     TrayIcon? tray;
 
@@ -41,13 +42,8 @@ sealed class App : Application
             icon = new WindowIcon(AssetLoader.Open(new Uri("avares://ZenitEngine.App/Assets/zenit.ico")));
             if (!StartHidden) Show();
 
-            var menu = new NativeMenu();
-            menu.Add(Item(Lang.T("Open Zenit", "Abrir Zenit"), Show));
-            menu.Add(new NativeMenuItemSeparator());
-            foreach (var (id, name) in TrayProfiles) menu.Add(Item(name, () => Task.Run(() => Machine.SetProfile(id))));
-            menu.Add(new NativeMenuItemSeparator());
-            menu.Add(Item(Lang.T("Quit", "Salir"), () => { tray?.Dispose(); desktop.Shutdown(); }));
-            tray = new TrayIcon { Icon = icon, ToolTipText = "Zenit Engine", Menu = menu, IsVisible = true };
+            this.desktop = desktop;
+            tray = new TrayIcon { Icon = icon, ToolTipText = "Zenit Engine", Menu = Menu(), IsVisible = true };
             tray.Clicked += (_, _) => Show();
             TrayIcon.SetIcons(this, [tray]);
 
@@ -69,16 +65,46 @@ sealed class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
+    NativeMenu Menu()
+    {
+        var menu = new NativeMenu();
+        menu.Add(Item(Lang.T("Open Zenit", "Abrir Zenit"), Show));
+        menu.Add(new NativeMenuItemSeparator());
+        foreach (var (id, name) in TrayProfiles) menu.Add(Item(name, () => Task.Run(() => Machine.SetProfile(id))));
+        menu.Add(new NativeMenuItemSeparator());
+        menu.Add(Item(Lang.T("Quit", "Salir"), () => { tray?.Dispose(); desktop?.Shutdown(); }));
+        return menu;
+    }
+
+    // After a language change: the window and the tray menu again, in the new language.
+    public void Reload()
+    {
+        var old = window;
+        window = null;
+        if (tray is not null) tray.Menu = Menu();
+        Show();
+        if (old is not null)
+        {
+            // Same place and size, back on the settings the language was changed from.
+            window!.WindowStartupLocation = WindowStartupLocation.Manual;
+            window.Position = old.Position;
+            window.Width = old.Width; window.Height = old.Height;
+            window.WindowState = old.WindowState;
+            window.ShowSettings();
+            old.Close();
+        }
+    }
+
     // The window exists only while it is open: closing it goes back to the tray and frees the window, its shader
     // caches and its timers, so the app in the tray is just the icon, the tooltip timer and the notice listener.
     void Show()
     {
         if (window is null)
         {
-            window = new MainWindow { Icon = icon };
+            var created = window = new MainWindow { Icon = icon };
             window.Closed += (_, _) =>
             {
-                window = null;
+                if (window == created) window = null; // a reload has already put a new window there
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
                 GC.Collect();
