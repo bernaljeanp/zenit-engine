@@ -32,10 +32,16 @@ and the laptop went back to **58-66 °C at idle**. That is the idea: tell you wh
 - **The Alienware function keys keep working.** F6 Performance Boost, F7 Stealth and F9 keyboard light levels used
   to need Alienware Command Center; the firmware sends them as hidden F17-F20 keys, and Zenit handles them and shows
   a short on-screen notice.
+- **Battery charge limit.** On Dell and Alienware laptops, stop charging at 80 % or 60 % (or keep Dell's Adaptive
+  mode) so a laptop that lives on the charger wears its battery more slowly. Written to the BIOS through Dell's own
+  BIOS settings interface, so it holds even without Zenit running.
 - **In the tray.** Starts with Windows next to the clock: temperatures in the tooltip, profiles one click away.
+- **Settings in one place.** Charge limit, profile by power source, start with Windows, language and a profile for
+  each installed game.
 - **An instrument cluster, not a settings page.** Heat dials, a mode bar, the last minute of CPU heat and the fans,
   drawn on the GPU with Skia shaders. It watches its own cost: shader layers are cached on the GPU, about 15 % of one core while focused, nothing in the tray.
-- **Speaks your language.** English or Spanish, picked from the Windows display language, notices included.
+- **Speaks your language.** English or Spanish, picked from the Windows display language (or in the settings),
+  notices included.
 - **Driver updates, official sources only.** Lists devices Windows reports as failing (error codes, "Degraded")
   and vendor drivers for physical hardware older than three years. **Update drivers** installs official updates from
   two places: the Windows Update driver catalog (packages Intel, NVIDIA, Dell and the other makers publish for your
