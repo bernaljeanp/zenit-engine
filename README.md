@@ -16,6 +16,8 @@ and the laptop went back to **58-66 °C at idle**. That is the idea: tell you wh
 
 ## What it does
 
+- **The right profile for the moment, automatic.** Balanced+ on the charger and Balanced on battery (on the test
+  laptop, battery idle runs at 49-53 °C with the fans stopped), switched when you plug or unplug it.
 - **Thermal profile per game, automatic.** Start a game from any launcher (Steam, Epic, GOG, Xbox, Ubisoft, Riot)
   and Zenit switches to performance (balanced-performance on battery), or to the profile you picked for that game;
   quit and it restores what you had. It costs nothing while you play: a process list every few seconds, each new
@@ -43,6 +45,10 @@ and the laptop went back to **58-66 °C at idle**. That is the idea: tell you wh
   you press the button.
 - **Works on any PC, best on Alienware.** Without a supported laptop it falls back to the Windows power mode.
 
+**How it was built:** [field notes](docs/field-notes.md) from taking an Alienware 16X Aurora apart from the software
+side: the Alienware Command Center process monitor that kept a CPU at 86 °C idle, the AW-ELC lighting protocol, the
+F6/F7/F9 keys, Intel drivers Windows calls "Degraded" that are not broken, and what each thermal profile really does.
+
 ## What it will never do
 
 - Install drivers from its own mirror or a scraped database. Tools that do this have shipped wrong and generic drivers.
@@ -65,8 +71,9 @@ Download **`ZenitSetup-<version>.exe`** from [Releases](../../releases/latest) a
 2004 or Windows 11 (64-bit), asks for administrator rights once, installs to `C:\Program Files\Zenit Engine`, starts
 the Engine at sign-in and puts Zenit in the tray. Uninstall it from Settings > Apps.
 
-Releases are not code-signed yet (a free certificate from SignPath Foundation has been requested), so Windows SmartScreen
-may warn the first time: **More info > Run anyway**. Every release is built from this repository by GitHub Actions and
+Releases are not code-signed yet, so Windows SmartScreen may warn the first time (**More info > Run anyway**), and on PCs
+with **Smart App Control** on, Windows blocks the installer outright. Signing is in progress; until then, Smart App
+Control users can install from source (below). Every release is built from this repository by GitHub Actions and
 ships with `SHA256SUMS.txt`.
 
 ### From source

@@ -2,17 +2,19 @@
 for administrator rights once, installs to `C:\Program Files\Zenit Engine`, starts the Engine and puts Zenit in the
 tray. Uninstall from Settings > Apps.
 
-> Not code-signed yet (a free certificate from SignPath Foundation has been requested). Windows SmartScreen may say
-> "Windows protected your PC": choose **More info > Run anyway**. Check the download against `SHA256SUMS.txt`
-> (`sha256sum -c SHA256SUMS.txt`); every release is built from this repository by GitHub Actions.
+> Not code-signed yet. Windows SmartScreen may say "Windows protected your PC" (**More info > Run anyway**), and on PCs
+> with **Smart App Control** on, Windows blocks the installer; install from source there (see the README). Check the
+> download with `sha256sum -c SHA256SUMS.txt`; every release is built from this repository by GitHub Actions.
 
-**What's new in 0.1.2**
+**What's new in 0.1.3**
 
-- Driver check: devices Windows labels "Degraded" only because they run on a legacy-style kernel driver (Intel's SoC
-  Thermal, PMT and PerfMon IPF providers on recent Intel laptops) are no longer listed at all. Their drivers run
-  normally; there is nothing to fix.
+- Everyday profile by power source: **Balanced+ on the charger, Balanced on battery**, applied at sign-in and when you
+  plug or unplug, with an on-screen notice. A profile you pick by hand stays until the next change of source; a game
+  keeps its own profile.
+- Installer: file times are recorded in UTC (installed files were dated hours in the future), and `install.ps1`
+  replaces every file and keeps the setup's uninstaller.
+- [Field notes](https://github.com/bernaljeanp/zenit-engine/blob/main/docs/field-notes.md): what was measured on the
+  Alienware 16X Aurora that shaped all of this.
 
-**0.1.1**
-
-- Much lighter in the tray: the window is created when you open it and freed when you close it (about 97 MB of RAM in
-  the tray instead of 330 MB).
+**0.1.2** — devices on legacy-style kernel drivers (Intel's IPF providers) are no longer listed as problems.
+**0.1.1** — about 97 MB of RAM in the tray instead of 330 MB.
