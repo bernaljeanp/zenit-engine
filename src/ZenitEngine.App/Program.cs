@@ -58,6 +58,15 @@ sealed class App : Application
             tooltip.Start();
 
             new Thread(() => { while (ShowSignal!.WaitOne()) Dispatcher.UIThread.Post(Show); }) { IsBackground = true }.Start();
+
+            // The Engine handles F6/F7/F9 and signals this event; the app shows what happened.
+            var osd = new Osd();
+            var noticeSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\ZenitEngineNotice");
+            new Thread(() =>
+            {
+                while (noticeSignal.WaitOne())
+                    if (Machine.LastNotice() is { Seq: > 0 } n) Dispatcher.UIThread.Post(() => osd.Notify(n.Title, n.Detail));
+            }) { IsBackground = true }.Start();
         }
         base.OnFrameworkInitializationCompleted();
     }

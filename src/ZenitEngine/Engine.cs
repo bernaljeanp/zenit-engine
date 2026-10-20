@@ -7,7 +7,7 @@ using System.Text.Json;
 // and answers over a local named pipe; only hardware control lives here, everything else stays unprivileged.
 // Protocol: one text line per connection, one JSON line back: "status", "set <profile>", "install-drivers", "game"
 // (the game the watcher sees running), "lights" (saved color) or "lights <RRGGBB> <0-100>".
-// It also runs the game watcher and restores the lighting at sign-in.
+// It also runs the game watcher and the Alienware function keys, and restores the lighting at sign-in.
 static class Engine
 {
     const string PipeName = "ZenitEngine";
@@ -21,6 +21,7 @@ static class Engine
         // process could otherwise add its own instance and pose as the Engine.
         security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), PipeAccessRights.CreateNewInstance, AccessControlType.Allow));
         GameWatcher.Start();
+        Hotkeys.Start();
         // The lighting controller forgets its colors at power-off; put the user's back at sign-in.
         try { Lighting.Restore(); } catch (Exception e) when (e is IOException or PlatformNotSupportedException or ArgumentException) { }
         while (true)
@@ -57,6 +58,7 @@ static class Engine
             {
                 case ["status"]: return JsonSerializer.Serialize(Thermal.Read());
                 case ["set", var profile]: Thermal.Set(profile); return """{"ok":true}""";
+                case ["notice"]: return JsonSerializer.Serialize(Hotkeys.Last);
                 case ["game"]: return JsonSerializer.Serialize(new { Game = GameWatcher.Current?.Title });
                 case ["lights"]: return JsonSerializer.Serialize(Lighting.Saved());
                 case ["lights", var light] when light.Split(' ') is [var color, var level] && int.TryParse(level, out var brightness):

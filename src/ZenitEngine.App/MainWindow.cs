@@ -212,18 +212,27 @@ sealed class MainWindow : Window
     // Curated, not a rainbow picker: colors that read well through keycaps and the logo diffuser.
     static readonly (string Name, string Hex)[] LightPresets =
     [
-        ("Zenith", "8EC5FF"), ("Ice", "E6F2FF"), ("Ember", "FF5A1F"), ("Crimson", "FF1E3C"),
+        ("Aurora", "AURORA"), ("Zenith", "8EC5FF"), ("Ice", "E6F2FF"), ("Ember", "FF5A1F"), ("Crimson", "FF1E3C"),
         ("Solar", "FFB000"), ("Plasma", "B04BFF"), ("Toxic", "39FF88"), ("Off", "000000"),
     ];
 
     Control Swatch(string name, string hex)
     {
         var off = hex == "000000";
-        var color = Color.Parse("#" + hex);
+        var aurora = hex == "AURORA";
+        // Aurora is the drifting effect: shown as its own northern-lights gradient.
+        var color = aurora ? Color.Parse("#00E0D0") : Color.Parse("#" + hex);
+        IBrush fill = aurora
+            ? new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                GradientStops = { new GradientStop(Color.Parse("#19FF7A"), 0), new GradientStop(Color.Parse("#1E7BFF"), 0.55), new GradientStop(Color.Parse("#D02BFF"), 1) },
+            }
+            : new SolidColorBrush(color);
         var dot = new Border
         {
             Width = 30, Height = 30, CornerRadius = new CornerRadius(15),
-            Background = off ? Brushes.Transparent : new SolidColorBrush(color),
+            Background = off ? Brushes.Transparent : fill,
             BorderBrush = Palette.Muted, BorderThickness = new Thickness(off ? 1.5 : 0),
             BoxShadow = off ? default : new BoxShadows(new BoxShadow { Blur = 18, Spread = 1, Color = Color.FromArgb(0x70, color.R, color.G, color.B) }),
         };
@@ -250,7 +259,7 @@ sealed class MainWindow : Window
         if (saved is not null) brightness.Value = saved.Brightness;
         loadingLights = false;
         lightColor = saved is null ? LightPresets[0].Hex : saved.Brightness == 0 ? "000000" : saved.Color;
-        lightNote.Text = "Keyboard and logo. Zenit talks to the AlienFX controller directly, no Alienware Command Center needed, and puts your color back at sign-in.";
+        lightNote.Text = "Keyboard and logo, straight to the AlienFX controller, no Alienware Command Center needed. F9 steps the brightness, F7 is Stealth, F6 Performance Boost.";
         ShowLights();
     }
 

@@ -24,9 +24,12 @@ and the laptop went back to **58-66 °C at idle**. That is the idea: tell you wh
 - **Live readings and a plain-language diagnosis.** CPU and GPU temperature, fan speeds and the active profile, read
   from the laptop's own firmware interface. When the CPU runs hot while doing little, Zenit names the process behind
   it and offers to stop it.
-- **Lighting without Alienware Command Center.** Keyboard and logo color and brightness, sent straight to the
-  AlienFX "AW-ELC" controller over USB HID and restored at sign-in. Protocol from
+- **Lighting without Alienware Command Center.** Keyboard and logo color, brightness and the Aurora color drift,
+  sent straight to the AlienFX "AW-ELC" controller over USB HID and restored at sign-in. Protocol from
   [alienfx-tools](https://github.com/T-Troll/alienfx-tools) (MIT).
+- **The Alienware function keys keep working.** F6 Performance Boost, F7 Stealth and F9 keyboard light levels used
+  to need Alienware Command Center; the firmware sends them as hidden F17-F20 keys, and Zenit handles them and shows
+  a short on-screen notice.
 - **In the tray.** Starts with Windows next to the clock: temperatures in the tooltip, profiles one click away.
 - **Driver updates, official sources only.** Lists devices Windows reports as failing (error codes, "Degraded")
   and vendor drivers for physical hardware older than three years. **Update drivers** installs official updates from
@@ -77,7 +80,7 @@ $z = "$env:LOCALAPPDATA\Programs\ZenitEngine\ZenitEngine.exe"
 & $z --drivers                       # driver check (add --offline to skip Windows Update)
 & $z                                 # installed games (Steam, Epic, GOG, Xbox, Ubisoft, Riot) as JSON
 & $z --launch steam:730              # launch with the game's thermal profile; restores the previous one on exit
-& $z --lights 8EC5FF 80              # keyboard and logo color (RRGGBB) and brightness (0-100)
+& $z --lights 8EC5FF 80              # keyboard and logo color (RRGGBB or AURORA) and brightness (0-100)
 & $z --game-profile steam:730 quiet  # remember a profile for a game
 ```
 

@@ -8,10 +8,22 @@ using Microsoft.Win32.SafeHandles;
 //   03 21 00 <op> ff ff  control: 1 start a new set, 3 finish and play, 4 remove the running one
 //   03 27 R G B 00 <n> <ids...>  one color for up to 26 light IDs
 //   03 26 <100-brightness> 00 <n> <ids...>  brightness for up to 28 light IDs
+//   03 23 01 00 <n> <ids...>  select lights for an effect, looping
+//   03 24 + up to 3 phases of 8 bytes: <type 2=morph> <time> <0xCF morph> 00 <tempo> R G B
 // The controller answers HidD_GetInputReport with its state in byte 2 (34 = busy).
 static class Lighting
 {
+    // Color is RRGGBB or "AURORA", the slow color drift Alienware ships on Aurora laptops.
     public record State(string Color, int Brightness);
+
+    public const string Aurora = "AURORA";
+
+    // Northern lights: green, teal, blue, violet, magenta and back.
+    static readonly (byte R, byte G, byte B)[] AuroraPhases =
+        [(0x19, 0xFF, 0x7A), (0x00, 0xE0, 0xD0), (0x1E, 0x7B, 0xFF), (0x7A, 0x3C, 0xFF), (0xD0, 0x2B, 0xFF), (0x1E, 0x7B, 0xFF)];
+
+    // F9 steps through these.
+    public static readonly int[] Levels = [100, 40, 0];
 
     // ponytail: every ID the protocol can address in one command; IDs the controller doesn't have are ignored.
     // A per-zone map (keyboard, logo, rear) needs probing each ID on real hardware.
@@ -25,26 +37,42 @@ static class Lighting
         catch (Exception e) when (e is IOException or JsonException) { return null; }
     }
 
-    // Color as "RRGGBB", brightness 0..100. Remembered so the Engine can put it back at sign-in.
-    public static void Set(string color, int brightness)
+    // Color as "RRGGBB" or Aurora, brightness 0..100. Remembered so the Engine can put it back at sign-in,
+    // unless remember is false (stealth mode darkens the lights without forgetting them).
+    public static void Set(string color, int brightness, bool remember = true)
     {
-        if (color.Length != 6 || !int.TryParse(color, System.Globalization.NumberStyles.HexNumber, null, out var rgb))
-            throw new ArgumentException("color must be RRGGBB");
+        color = color.ToUpperInvariant();
+        var aurora = color == Aurora;
+        var rgb = 0;
+        if (!aurora && (color.Length != 6 || !int.TryParse(color, System.Globalization.NumberStyles.HexNumber, null, out rgb)))
+            throw new ArgumentException("color must be RRGGBB or AURORA");
         brightness = Math.Clamp(brightness, 0, 100);
         using var device = Open() ?? throw new PlatformNotSupportedException("no Alienware AW-ELC lighting controller found");
-        var (r, g, b) = ((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
 
         WaitReady(device);
         Send(device, [0x03, 0x21, 0x00, 0x04, 0xff, 0xff]);
         Send(device, [0x03, 0x21, 0x00, 0x01, 0xff, 0xff]);
-        Send(device, [0x03, 0x27, r, g, b, 0x00, (byte)AllLights.Length, .. AllLights]);
+        if (aurora)
+        {
+            Send(device, [0x03, 0x23, 0x01, 0x00, (byte)AllLights.Length, .. AllLights]);
+            // ponytail: phase time and tempo picked by eye on a 16X Aurora; tune here if it feels too fast or slow.
+            const byte Morph = 2, MorphCode = 0xCF, Time = 0x07, Tempo = 0x40;
+            foreach (var chunk in AuroraPhases.Chunk(3))
+                Send(device, [0x03, 0x24, .. chunk.SelectMany(c => new byte[] { Morph, Time, MorphCode, 0x00, Tempo, c.R, c.G, c.B })]);
+        }
+        else
+            Send(device, [0x03, 0x27, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb, 0x00, (byte)AllLights.Length, .. AllLights]);
         Send(device, [0x03, 0x21, 0x00, 0x03, 0xff, 0xff]);
         WaitReady(device);
         Send(device, [0x03, 0x26, (byte)(100 - brightness), 0x00, (byte)AllLights.Length, .. AllLights]);
 
+        if (!remember) return;
         Directory.CreateDirectory(Catalog.DataDir);
-        File.WriteAllText(StateFile, JsonSerializer.Serialize(new State(color.ToUpperInvariant(), brightness)));
+        File.WriteAllText(StateFile, JsonSerializer.Serialize(new State(color, brightness)));
     }
+
+    // F9: the next level down from the current brightness, wrapping from off back to full.
+    public static int NextLevel(int current) => Levels.FirstOrDefault(l => l < current, Levels[0]);
 
     public static void Restore()
     {

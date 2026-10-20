@@ -12,6 +12,7 @@ record MakerPackage(string Name, string Category, string Version, string Install
 record DriverReport(Device[] Problems, Device[] Outdated, DriverUpdate[] Available, string? UpdateError, MakerPackage[]? Maker, string? MakerError);
 record InstallResult(string[] Installed, string[] Failed, bool RebootRequired, bool RestorePoint);
 record LightState(string Color, int Brightness);
+record Notice(int Seq, string Title, string Detail);
 record PowerPlan(string Name, int MinProcessorAc);
 enum Severity { Good, Info, Warning, Critical }
 record Hog(string Name, int Pid, double Cores);
@@ -29,6 +30,9 @@ static class Machine
         Ask("status") is { } json && !json.Contains("\"error\"") ? JsonSerializer.Deserialize<Status>(json, Json) : null;
 
     public static bool SetProfile(string profile) => Ask($"set {profile}")?.Contains("\"ok\"") == true;
+
+    // What the last Alienware function key did, for the on-screen notice.
+    public static Notice? LastNotice() => Ask("notice") is { } json && !json.Contains("\"error\"") ? JsonSerializer.Deserialize<Notice>(json, Json) : null;
 
     // The game the Engine's watcher sees running, if any.
     public static string? RunningGame() =>

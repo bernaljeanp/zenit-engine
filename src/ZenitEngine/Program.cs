@@ -311,6 +311,8 @@ static class Catalog
             "older driver gets Dell's package, BIOS is skipped");
         Check(Dell.Applicable(dellXml, [Gpu("32.0.16.1714")]).Length == 0, "newer installed driver is kept");
 
+        Check(Lighting.NextLevel(100) == 40 && Lighting.NextLevel(40) == 0 && Lighting.NextLevel(0) == 100 && Lighting.NextLevel(80) == 40, "F9 steps full, low, off");
+
         List<Game> installed = [new("steam", "steam:730", "Counter-Strike 2", "", @"C:\Steam\common\CS2"), new("xbox", "xbox:Roblox_55nm", "Roblox", "", @"C:\XboxGames\Roblox")];
         Check(GameWatcher.Match(@"C:\Steam\common\CS2\game\bin\win64\cs2.exe", null, installed)?.Id == "steam:730", "game process matched by install folder");
         Check(GameWatcher.Match(@"C:\XboxGames\Roblox\Content\RobloxPlayerBeta.exe", "Roblox_55nm", installed)?.Id == "xbox:Roblox_55nm", "packaged game matched by family");
