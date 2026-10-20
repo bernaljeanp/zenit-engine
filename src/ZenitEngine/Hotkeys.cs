@@ -13,19 +13,19 @@ static class Hotkeys
 
     static string? beforeBoost, beforeStealth;
 
-    // What the last key did, for the app's on-screen notice. The app creates the event; the Engine signals it.
+    // What the last key (or the power watcher) did, for the app's on-screen notice. The app creates the event; the Engine signals it.
     public record Notice(int Seq, string Title, string Detail);
     static Notice last = new(0, "", "");
     public static Notice Last => Volatile.Read(ref last);
 
-    static void Notify(string title, string detail)
+    public static void Notify(string title, string detail)
     {
         Volatile.Write(ref last, new Notice(last.Seq + 1, title, detail));
         try { using var signal = EventWaitHandle.OpenExisting(@"Local\ZenitEngineNotice"); signal.Set(); }
         catch (WaitHandleCannotBeOpenedException) { } // the app isn't running
     }
 
-    static string Name(string profile) => profile switch
+    public static string Name(string profile) => profile switch
     {
         "performance" => Lang.T("Performance", "Rendimiento"), "balanced-performance" => Lang.T("Balanced+", "Equilibrado+"),
         "balanced" => Lang.T("Balanced", "Equilibrado"), "cool" => Lang.T("Cool", "Fresco"), "quiet" => Lang.T("Quiet", "Silencioso"),

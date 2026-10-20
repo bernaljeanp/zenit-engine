@@ -1,7 +1,8 @@
 using System.Diagnostics;
 
 // Switches the thermal profile when a game starts, however it was launched, and puts the previous one back when it
-// ends. Runs inside the Engine. Cheap by design, unlike Alienware Command Center's process monitor (one WMI query per
+// ends. Also the everyday profile by power source: Balanced+ on the charger, Balanced on battery, applied at sign-in and
+// whenever the charger is plugged or unplugged (a profile picked by hand stays until the next change of source). Runs inside the Engine. Cheap by design, unlike Alienware Command Center's process monitor (one WMI query per
 // process start and stop, which kept WmiPrvSE at ~180% CPU on the test laptop): a plain process list every few
 // seconds, and each new process ID is classified once, by its image path against the installed games' folders.
 static class GameWatcher
@@ -23,6 +24,7 @@ static class GameWatcher
         var scanned = DateTime.MinValue;
         string? restore = null;
         DateTime lastSeen = default;
+        bool? onBattery = null;
         while (true)
         {
             try
@@ -36,6 +38,23 @@ static class GameWatcher
                 var alive = Process.GetProcesses().Select(p => { using (p) return p.Id; }).ToHashSet();
                 foreach (var pid in known.Keys.Where(pid => !alive.Contains(pid)).ToList()) known.Remove(pid);
                 foreach (var pid in alive.Where(pid => !known.ContainsKey(pid))) known[pid] = Match(pid, games);
+
+                var battery = ThermalPolicy.OnBattery();
+                if (battery != onBattery)
+                {
+                    var first = onBattery is null;
+                    onBattery = battery;
+                    var everyday = ThermalPolicy.Everyday(battery);
+                    if (Current is not null) restore = everyday; // mid-game: the game keeps its profile, this one follows it
+                    else if (Thermal.Current() != everyday)
+                    {
+                        Thermal.Set(everyday);
+                        if (!first)
+                            Hotkeys.Notify(Lang.T("Thermal profile", "Perfil térmico"), battery
+                                ? Lang.T($"{Hotkeys.Name(everyday)} · on battery", $"{Hotkeys.Name(everyday)} · con batería")
+                                : Lang.T($"{Hotkeys.Name(everyday)} · charger connected", $"{Hotkeys.Name(everyday)} · cargador conectado"));
+                    }
+                }
 
                 var running = known.Values.FirstOrDefault(g => g is not null);
                 var now = DateTime.UtcNow;

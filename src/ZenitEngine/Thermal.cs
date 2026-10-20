@@ -131,6 +131,9 @@ static class ThermalPolicy
         File.WriteAllText(StorePath, JsonSerializer.Serialize(chosen));
     }
 
+    // The everyday profile by power source: cooler and quicker on the charger, longer battery without it.
+    public static string Everyday(bool onBattery) => onBattery ? "balanced" : "balanced-performance";
+
     public static bool OnBattery() => GetSystemPowerStatus(out var s) && s.ACLineStatus == 0;
 
     [StructLayout(LayoutKind.Sequential)]

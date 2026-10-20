@@ -261,6 +261,7 @@ static class Catalog
         Check(ThermalPolicy.For("steam:730", false, chosen) == "quiet", "per-game choice wins");
         Check(ThermalPolicy.For("xbox:x", false, chosen) == "performance", "AC default");
         Check(ThermalPolicy.For("xbox:x", true, chosen) == "balanced-performance", "battery default");
+        Check(ThermalPolicy.Everyday(false) == "balanced-performance" && ThermalPolicy.Everyday(true) == "balanced", "everyday profile by power source");
 
         var riotYaml = "product_install_full_path: \"C:/Riot Games/VALORANT/live\"\nproduct_install_root: \"C:/Riot Games\"\nshortcut_name: VALORANT.lnk\n";
         Check(RiotProduct("valorant.live", riotYaml, @"C:\RC\RiotClientServices.exe") is
