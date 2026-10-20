@@ -34,7 +34,7 @@ sealed class MainWindow : Window
     double load;
     PowerPlan? plan;
     DriverReport? drivers;
-    bool windowsUpdateChecked, scanning, polling, closed;
+    bool windowsUpdateChecked, scanning, installing, polling, closed;
     string? shownProfiles;
     double warmTarget;
     int tick;
@@ -73,7 +73,8 @@ sealed class MainWindow : Window
 
         var driverActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         driverActions.Children.Add(Action("Scan again", () => _ = ScanDrivers(false)));
-        driverActions.Children.Add(Action("Check Windows Update", () => _ = ScanDrivers(true)));
+        driverActions.Children.Add(Action("Check for updates", () => _ = ScanDrivers(true)));
+        driverActions.Children.Add(Action("Update drivers", () => _ = InstallDrivers()));
         DockPanel.SetDock(driverActions, Dock.Right);
         var driverBody = new StackPanel { Spacing = 16, Children = { new DockPanel { Children = { driverActions, driverStatus } }, driverList } };
 
@@ -190,7 +191,7 @@ sealed class MainWindow : Window
     {
         if (scanning) return;
         scanning = true;
-        driverStatus.Text = online ? "Checking Windows Update for driver updates. This can take a minute." : "Scanning devices.";
+        driverStatus.Text = online ? "Checking Windows Update and the laptop maker's catalog for official driver updates. This can take a minute." : "Scanning devices.";
         var report = await Task.Run(() => { try { return Machine.Drivers(online); } catch { return null; } });
         scanning = false;
         if (report is not null) { drivers = report; windowsUpdateChecked |= online && report.UpdateError is null; }
@@ -198,18 +199,43 @@ sealed class MainWindow : Window
         Update();
     }
 
+    // Official drivers only: what Windows Update's driver catalog offers for this machine's hardware IDs.
+    async Task InstallDrivers()
+    {
+        if (installing || scanning) return;
+        installing = true;
+        driverStatus.Text = "Creating a restore point, then downloading and installing official drivers from Windows Update and the laptop maker. Each package is checked before it runs. This can take several minutes.";
+        string message;
+        try
+        {
+            var r = await Task.Run(Machine.InstallDrivers);
+            message = r.Installed.Length == 0 && r.Failed.Length == 0
+                ? "Your drivers are up to date: neither Windows Update nor the laptop maker has anything newer."
+                : $"Installed {r.Installed.Length} driver updates" + (r.Failed.Length > 0 ? $", {r.Failed.Length} failed: {string.Join("; ", r.Failed)}" : "") + "."
+                  + (r.RestorePoint ? " A restore point was created first." : "")
+                  + (r.RebootRequired ? " Restart the laptop to finish." : "");
+        }
+        catch (Exception e) { message = $"The install didn't finish: {e.Message}"; }
+        installing = false;
+        await ScanDrivers(true);
+        driverStatus.Text = message + " " + driverStatus.Text;
+    }
+
     void ShowDrivers(string? updateError)
     {
         driverList.Children.Clear();
         if (drivers is null) { driverStatus.Text = "The driver check needs ZenitEngine.exe next to this app. Reinstall with install.ps1."; return; }
 
-        var updates = windowsUpdateChecked ? $"{drivers.Available.Length} updates on Windows Update" : "Windows Update not checked yet";
+        var updates = windowsUpdateChecked ? $"{drivers.Available.Length + (drivers.Maker?.Length ?? 0)} official updates" : "updates not checked yet";
         driverStatus.Text = $"{drivers.Problems.Length} devices with problems, {drivers.Outdated.Length} old drivers, {updates}."
-            + (updateError is null ? "" : $" Windows Update didn't answer: {updateError}");
+            + (updateError is null ? "" : $" Windows Update didn't answer: {updateError}")
+            + (drivers.MakerError is { } makerError ? $" The laptop maker's catalog didn't answer: {makerError}" : "");
         foreach (var d in drivers.Problems)
             driverList.Children.Add(Row(Severity.Warning, d.Name, $"Status {d.Status}" + (d.DriverVersion is null ? "" : $", driver {d.DriverVersion}") + (d.Provider is null ? "" : $" from {d.Provider}") + "."));
         foreach (var d in drivers.Outdated)
             driverList.Children.Add(Row(Severity.Info, d.Name, $"Driver {d.DriverVersion} from {d.Provider} is over three years old."));
+        foreach (var p in drivers.Maker ?? [])
+            driverList.Children.Add(Row(Severity.Info, p.Name, $"{p.Version} from the laptop maker for {p.Device}, which runs {p.Installed}. {p.Size / 1048576.0:0} MB."));
         foreach (var u in drivers.Available)
             driverList.Children.Add(Row(Severity.Info, u.Title, "Available from Windows Update, Optional updates."));
         if (driverList.Children.Count == 0) driverList.Children.Add(Row(Severity.Good, "No driver problems found", "Every device reports a working driver."));

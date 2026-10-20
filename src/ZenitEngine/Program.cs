@@ -278,6 +278,33 @@ static class Catalog
         Check(Drivers.IsProblem(Dev("Net", 2025, "Intel", "Error", 28)), "missing driver (code 28) is a problem");
         Check(Drivers.CimDate("20260916000000.******+***") == new DateTime(2026, 9, 16), "CIM driver date");
 
+        Drivers.InstalledDriver[] igpu = [new([@"PCI\VEN_8086&DEV_7D67&SUBSYS_0D341028"], "32.0.101.8991", new DateTime(2026, 5, 1))];
+        const string IntelTitle = "Intel Corporation Display Driver Update (32.0.101.8860)";
+        Check(!Drivers.IsNewer(IntelTitle, new DateTime(2026, 6, 24), @"PCI\VEN_8086&DEV_7D67&SUBSYS_0D341028", igpu),
+            "older Windows Update driver is not offered, even with a later date (Intel 8860 over 8991)");
+        Check(Drivers.IsNewer(IntelTitle.Replace("8860", "9001"), null, @"pci\ven_8086&dev_7d67&subsys_0d341028", igpu), "newer version is offered");
+        Check(!Drivers.IsNewer("Some Driver Update", new DateTime(2026, 1, 1), @"PCI\VEN_8086&DEV_7D67&SUBSYS_0D341028", igpu), "no version: older date is not offered");
+
+        var dellXml = new System.Xml.XmlDocument();
+        dellXml.LoadXml("""
+            <Manifest xmlns="openmanage/cm/dm">
+              <SoftwareComponent vendorVersion="32.0.16.1060" path="F/1/nv.exe" size="10">
+                <Name><Display lang="en">NVIDIA Graphics Driver</Display></Name><ComponentType value="DRVR" />
+                <Category><Display lang="en">Video</Display></Category>
+                <SupportedDCHDevices><Device version="32.0.16.1060"><PCIInfo deviceID="2D58" vendorID="10DE" subDeviceID="0D34" subVendorID="1028" /></Device></SupportedDCHDevices>
+                <Cryptography><Hash algorithm="SHA256">AB</Hash></Cryptography>
+              </SoftwareComponent>
+              <SoftwareComponent vendorVersion="2.7.0" path="F/2/bios.exe">
+                <Name><Display lang="en">System BIOS</Display></Name><ComponentType value="BIOS" />
+                <SupportedDevices><Device version="2.7.0"><PCIInfo deviceID="2D58" vendorID="10DE" subDeviceID="0D34" subVendorID="1028" /></Device></SupportedDevices>
+              </SoftwareComponent>
+            </Manifest>
+            """);
+        Dell.HardwareDevice Gpu(string version) => new("RTX 5070", [@"PCI\VEN_10DE&DEV_2D58&SUBSYS_0D341028&REV_A1", @"PCI\VEN_10DE&DEV_2D58&SUBSYS_0D341028"], version);
+        Check(Dell.Applicable(dellXml, [Gpu("32.0.15.9190")]) is [{ Name: "NVIDIA Graphics Driver", Installed: "32.0.15.9190", Url: "https://downloads.dell.com/F/1/nv.exe" }],
+            "older driver gets Dell's package, BIOS is skipped");
+        Check(Dell.Applicable(dellXml, [Gpu("32.0.16.1714")]).Length == 0, "newer installed driver is kept");
+
         Check(PowerMode.For("performance") == PowerMode.Best && PowerMode.For("quiet") == PowerMode.Efficiency
               && PowerMode.For("balanced") == Guid.Empty, "power mode mapping");
     }

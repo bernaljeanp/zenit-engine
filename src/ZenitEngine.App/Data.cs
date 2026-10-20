@@ -8,7 +8,9 @@ record Fan(int Id, double Rpm, double MaxRpm);
 record Status(string Profile, string[] Profiles, Fan[] Fans, Dictionary<string, double> TempsC);
 record Device(string Name, string Class, string Status, int ProblemCode, string? DriverVersion, string? Provider);
 record DriverUpdate(string Title, string? Class, string? Provider);
-record DriverReport(Device[] Problems, Device[] Outdated, DriverUpdate[] Available, string? UpdateError);
+record MakerPackage(string Name, string Category, string Version, string Installed, string Device, long Size);
+record DriverReport(Device[] Problems, Device[] Outdated, DriverUpdate[] Available, string? UpdateError, MakerPackage[]? Maker, string? MakerError);
+record InstallResult(string[] Installed, string[] Failed, bool RebootRequired, bool RestorePoint);
 record PowerPlan(string Name, int MinProcessorAc);
 enum Severity { Good, Info, Warning, Critical }
 record Finding(Severity Level, string Title, string Detail);
@@ -24,6 +26,15 @@ static class Machine
         Ask("status") is { } json && !json.Contains("\"error\"") ? JsonSerializer.Deserialize<Status>(json, Json) : null;
 
     public static bool SetProfile(string profile) => Ask($"set {profile}")?.Contains("\"ok\"") == true;
+
+    // Installing needs admin, so the Engine does it. Throws with the Engine's message on failure.
+    public static InstallResult InstallDrivers()
+    {
+        var json = Ask("install-drivers") ?? throw new InvalidOperationException("The Engine isn't running. Reinstall with install.ps1.");
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.TryGetProperty("error", out var error)) throw new InvalidOperationException(error.GetString());
+        return doc.RootElement.Deserialize<InstallResult>(Json)!;
+    }
 
     // Same one-line protocol as ZenitEngine's Engine.Ask.
     static string? Ask(string request)
@@ -106,9 +117,12 @@ static class Diagnosis
             if (drivers.Outdated.Length > 0)
                 f.Add(new(Severity.Info, $"{drivers.Outdated.Length} device drivers are over three years old",
                     string.Join(", ", drivers.Outdated.Take(3).Select(d => d.Name)) + ". Look for newer versions on the laptop maker's support page."));
-            if (drivers.Available.Length > 0)
+            if (drivers.Maker is { Length: > 0 } maker)
+            f.Add(new(Severity.Info, $"{maker.Length} driver updates from the laptop maker",
+                string.Join(", ", maker.Take(3).Select(p => p.Name)) + ". Official packages, verified before they install. Press Update drivers."));
+        if (drivers.Available.Length > 0)
                 f.Add(new(Severity.Info, $"{drivers.Available.Length} driver updates on Windows Update",
-                    "Install them from Settings, Windows Update, Advanced options, Optional updates."));
+                    "Official drivers from the hardware makers. Press Update drivers to install them."));
         }
 
         if (f.Count == 0)

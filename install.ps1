@@ -8,6 +8,9 @@ param(
     [switch]$Elevated  # internal: set on the self-elevated relaunch
 )
 $ErrorActionPreference = 'Stop'
+$Log = Join-Path $env:TEMP 'zenit-install.log'
+# trap covers the whole script wherever it sits, so $Log must exist before anything can fail.
+trap { "ERROR: $_" | Out-File $Log; throw } # the elevated window closes on failure; the caller reads the log
 
 # Check the Administrator role, not the group name: the name is localized ("Administradores" on Spanish Windows).
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -16,13 +19,11 @@ if (-not $admin) {
     if ($Elevated) { throw 'Elevation did not grant administrator rights; aborting.' }
     $relaunch = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Elevated')
     if ($Uninstall) { $relaunch += '-Uninstall' }
-    Start-Process powershell -Verb RunAs -Wait -ArgumentList $relaunch
-    Get-Content (Join-Path $env:TEMP 'zenit-install.log') -ErrorAction SilentlyContinue
+    # WaitForExit, not -Wait: -Wait also waits for every descendant, and dotnet leaves its build servers running.
+    (Start-Process powershell -Verb RunAs -PassThru -ArgumentList $relaunch).WaitForExit()
+    Get-Content $Log -ErrorAction SilentlyContinue
     return
 }
-
-$Log = Join-Path $env:TEMP 'zenit-install.log'
-trap { "ERROR: $_" | Out-File $Log; throw } # the elevated window closes on failure; the caller reads the log
 
 $Target = Join-Path $env:LOCALAPPDATA 'Programs\ZenitEngine'
 $Exe = Join-Path $Target 'ZenitEngine.exe'

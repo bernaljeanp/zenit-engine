@@ -18,14 +18,18 @@ and the laptop went back to **58-66 °C at idle**. That is the idea: tell you wh
   on battery), or to the profile you picked for that game; quit and it restores what you had.
 - **Live readings.** CPU and GPU temperature, fan speeds and the active profile, read from the laptop's own
   firmware interface.
-- **Driver check, official sources only.** Lists devices Windows reports as failing (error codes, "Degraded"),
-  vendor drivers for physical hardware older than three years, and the updates Microsoft's own Windows Update
-  driver catalog offers for your exact hardware IDs. It never downloads or installs drivers by itself.
+- **Driver updates, official sources only.** Lists devices Windows reports as failing (error codes, "Degraded")
+  and vendor drivers for physical hardware older than three years. **Update drivers** installs official updates from
+  two places: the Windows Update driver catalog (packages Intel, NVIDIA, Dell and the other makers publish for your
+  exact hardware IDs, signed by Microsoft) and, on Dell and Alienware, Dell's own catalog for your model, the one Dell
+  Command Update reads. Every Dell package must match the SHA-256 in Dell's signed catalog and carry Dell's signature.
+  Only versions newer than the one installed qualify. A restore point is created first, and nothing installs until
+  you press the button.
 - **Works on any PC, best on Alienware.** Without a supported laptop it falls back to the Windows power mode.
 
 ## What it will never do
 
-- Install drivers from its own mirror. Tools that do this have shipped wrong and generic drivers.
+- Install drivers from its own mirror or a scraped database. Tools that do this have shipped wrong and generic drivers.
 - Load a third-party kernel driver. On Alienware it talks to Dell's own AWCC WMI interface, the one Alienware
   Command Center uses, so anti-cheat and Windows security are unaffected.
 - Touch games or anti-cheat, or send data anywhere. No telemetry, no ads, no bundled software.
@@ -35,8 +39,8 @@ and the laptop went back to **58-66 °C at idle**. That is the idea: tell you wh
 | Brand | Status |
 |---|---|
 | Alienware (2020 and newer, AWCC WMI) | Working: profiles, fans, temperatures. Tested on a 16X Aurora (2025). |
-| Dell G-series | Likely (same interface), untested |
-| MSI, HP Omen/Victus, Acer | Planned. [Request your model](../../issues/new?template=laptop-support.yml). |
+| Dell (all models in Dell's catalog) | Driver updates from Dell's catalog. Thermal control likely on Dell G (same interface), untested. |
+| Lenovo, HP, MSI, ASUS, Acer | Driver updates through Windows Update. Maker catalogs and thermal control planned. [Request your model](../../issues/new?template=laptop-support.yml). |
 | Others | The Windows power mode fallback and the driver check work on any Windows PC |
 
 ## Install
