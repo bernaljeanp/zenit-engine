@@ -1,22 +1,14 @@
-First public release of Zenit Engine, a free and open-source companion for gaming laptops.
+**Install:** download `ZenitSetup-<version>.exe` below and run it; it updates an existing install in place. It asks
+for administrator rights once, installs to `C:\Program Files\Zenit Engine`, starts the Engine and puts Zenit in the
+tray. Uninstall from Settings > Apps.
 
-**Install:** download `ZenitSetup-<version>.exe` below and run it. It asks for administrator rights once, installs to
-`C:\Program Files\Zenit Engine`, starts the Engine and puts Zenit in the tray. Uninstall from Settings > Apps.
+> Not code-signed yet (a free certificate from SignPath Foundation has been requested). Windows SmartScreen may say
+> "Windows protected your PC": choose **More info > Run anyway**. Check the download against `SHA256SUMS.txt`; every
+> release is built from this repository by GitHub Actions.
 
-> This build is not code-signed yet (a free certificate from SignPath Foundation has been requested). Windows
-> SmartScreen may say "Windows protected your PC": choose **More info > Run anyway**. You can check the download
-> against `SHA256SUMS.txt`, and every release is built from this repository by GitHub Actions.
+**What's new in 0.1.1**
 
-**What's in it**
-
-- Live CPU and GPU temperatures, fan speeds and a plain-language diagnosis, including the process behind a hot CPU at
-  low load.
-- Thermal profiles, switched automatically when a game starts from any launcher.
-- Driver updates from official sources only: the Windows Update driver catalog and, on Dell and Alienware, Dell's
-  signed catalog. Newer versions only, restore point first.
-- Alienware: AlienFX keyboard lighting (colors, brightness, Aurora) and the F6 / F7 / F9 function keys, without
-  Alienware Command Center.
-- English and Spanish, picked from the Windows display language.
-
-**Requirements:** Windows 10 version 2004 or Windows 11, 64-bit. Thermal control, fans and lighting are tested on an
-Alienware 16X Aurora; the driver check and the Windows power-mode fallback work on any PC.
+- Much lighter in the tray: the window is created when you open it and freed when you close it. In the tray Zenit now
+  uses about 97 MB of RAM instead of 330 MB, and about 40 MB after closing the window.
+- Driver check: devices Windows shows as "Degraded" only because they run on a legacy-style kernel driver (Intel's
+  SoC Thermal, PMT and PerfMon IPF providers) are now reported as information with "nothing to fix", not as a fault.
