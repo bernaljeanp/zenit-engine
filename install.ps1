@@ -28,6 +28,7 @@ if (-not $admin) {
 $Target = Join-Path $env:LOCALAPPDATA 'Programs\ZenitEngine'
 $Exe = Join-Path $Target 'ZenitEngine.exe'
 $Shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Zenit Engine.lnk'
+$RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
 # Stop the running Engine so its files can be replaced or removed.
 Get-ScheduledTask -TaskPath '\Zenit\' -TaskName Engine -ErrorAction SilentlyContinue | Stop-ScheduledTask
@@ -37,6 +38,7 @@ if ($Uninstall) {
     Unregister-ScheduledTask -TaskPath '\Zenit\' -TaskName Engine -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item $Target -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $Shortcut -Force -ErrorAction SilentlyContinue
+    Remove-ItemProperty $RunKey -Name 'Zenit Engine' -ErrorAction SilentlyContinue
     "Zenit Engine removed. Your settings in $env:LOCALAPPDATA\Zenit were kept." | Tee-Object -FilePath $Log
     return
 }
@@ -51,6 +53,8 @@ $link = (New-Object -ComObject WScript.Shell).CreateShortcut($Shortcut)
 $link.TargetPath = Join-Path $Target 'ZenitEngine.App.exe'
 $link.WorkingDirectory = $Target
 $link.Save()
+# The app starts with Windows in the tray: temperature in the tooltip, profiles one click away.
+Set-ItemProperty $RunKey -Name 'Zenit Engine' -Value "`"$(Join-Path $Target 'ZenitEngine.App.exe')`" --tray"
 
 # The Engine runs elevated in this user's session at sign-in. Interactive logon type: no password is stored and
 # there is no UAC prompt at each sign-in. conhost --headless keeps the console app from opening a window, which

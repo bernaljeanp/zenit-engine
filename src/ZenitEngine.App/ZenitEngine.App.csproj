@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>ZenitEngine.App</AssemblyName>
+    <ApplicationIcon>Assets\zenit.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
@@ -14,6 +15,7 @@
   <ItemGroup>
     <!-- Archivo by Omnibus-Type, SIL Open Font License (Assets/Fonts/OFL.txt). -->
     <AvaloniaResource Include="Assets\Fonts\*.ttf" />
+    <AvaloniaResource Include="Assets\zenit.ico" />
   </ItemGroup>
   <ItemGroup>
     <!-- Builds ZenitEngine.exe next to the app; they talk through the Engine pipe and the CLI's JSON, not shared types. -->

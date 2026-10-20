@@ -11,9 +11,12 @@ record DriverUpdate(string Title, string? Class, string? Provider);
 record MakerPackage(string Name, string Category, string Version, string Installed, string Device, long Size);
 record DriverReport(Device[] Problems, Device[] Outdated, DriverUpdate[] Available, string? UpdateError, MakerPackage[]? Maker, string? MakerError);
 record InstallResult(string[] Installed, string[] Failed, bool RebootRequired, bool RestorePoint);
+record LightState(string Color, int Brightness);
 record PowerPlan(string Name, int MinProcessorAc);
 enum Severity { Good, Info, Warning, Critical }
-record Finding(Severity Level, string Title, string Detail);
+record Hog(string Name, int Pid, double Cores);
+// End: a process the user can stop from the diagnosis.
+record Finding(Severity Level, string Title, string Detail, Hog? End = null);
 
 // Everything the app reads. Nothing here needs admin: hardware goes through the elevated Engine's pipe,
 // the rest is plain WMI, powercfg and the engine CLI.
@@ -26,6 +29,18 @@ static class Machine
         Ask("status") is { } json && !json.Contains("\"error\"") ? JsonSerializer.Deserialize<Status>(json, Json) : null;
 
     public static bool SetProfile(string profile) => Ask($"set {profile}")?.Contains("\"ok\"") == true;
+
+    // The game the Engine's watcher sees running, if any.
+    public static string? RunningGame() =>
+        Ask("game") is { } json && JsonDocument.Parse(json).RootElement.TryGetProperty("Game", out var g) ? g.GetString() : null;
+
+    public static LightState? Lights() =>
+        Ask("lights") is { } json && json != "null" && !json.Contains("\"error\"") ? JsonSerializer.Deserialize<LightState>(json, Json) : null;
+
+    // Null when applied, otherwise what went wrong.
+    public static string? SetLights(string color, int brightness) =>
+        Ask($"lights {color} {brightness}") is { } json && json.Contains("\"ok\"") ? null
+            : "The lighting controller didn't answer. It needs the Engine running on an Alienware laptop with AlienFX lighting.";
 
     // Installing needs admin, so the Engine does it. Throws with the Engine's message on failure.
     public static InstallResult InstallDrivers()
@@ -74,6 +89,22 @@ static class Machine
         return json.TrimStart().StartsWith('{') ? JsonSerializer.Deserialize<DriverReport>(json, Json) : null;
     }
 
+    // The process using the most CPU right now, from Windows' own performance counters (covers system processes
+    // too, which Process.TotalProcessorTime can't read unelevated). Only sampled while the CPU runs hot doing little.
+    public static Hog? TopProcess()
+    {
+        using var searcher = new ManagementObjectSearcher("SELECT Name, IDProcess, PercentProcessorTime FROM Win32_PerfFormattedData_PerfProc_Process");
+        Hog? top = null;
+        foreach (var o in searcher.Get())
+        {
+            var name = o["Name"] as string ?? "";
+            if (name is "_Total" or "Idle" || name.StartsWith("ZenitEngine", StringComparison.OrdinalIgnoreCase)) continue;
+            var cores = Convert.ToDouble(o["PercentProcessorTime"]) / 100;
+            if (cores > (top?.Cores ?? 0)) top = new(name.Split('#')[0], Convert.ToInt32(o["IDProcess"]), cores);
+        }
+        return top;
+    }
+
     static string Run(string file, string args)
     {
         var psi = new ProcessStartInfo(file, args) { RedirectStandardOutput = true, CreateNoWindow = true, UseShellExecute = false };
@@ -87,7 +118,7 @@ static class Machine
 // The plain-language diagnosis: what is wrong, why it matters and what to do, most severe first.
 static class Diagnosis
 {
-    public static List<Finding> Evaluate(Status? status, double load, PowerPlan? plan, DriverReport? drivers)
+    public static List<Finding> Evaluate(Status? status, double load, PowerPlan? plan, DriverReport? drivers, Hog? hog = null)
     {
         var f = new List<Finding>();
         if (status is null)
@@ -95,7 +126,9 @@ static class Diagnosis
                 "Temperatures and thermal profiles come from the Engine, which starts when you sign in. Run install.ps1 again, or sign out and back in."));
         else if (status.TempsC.TryGetValue("cpu", out var cpu))
         {
-            if (cpu >= 95 && load < 15)
+            if (IsIdleHeat(cpu, load) && hog is { Cores: >= 0.3 } h)
+                f.Add(Culprit(cpu, h));
+            else if (cpu >= 95 && load < 15)
                 f.Add(new(Severity.Critical, $"CPU at {cpu:0} °C with almost nothing running",
                     $"That is close to its 105 °C limit while the CPU is only {load:0} % busy. Usual causes: a power plan that keeps the CPU at full speed, something stuck after days without a restart, or dust and dried thermal paste."));
             else if (cpu >= 90)
@@ -128,6 +161,19 @@ static class Diagnosis
         if (f.Count == 0)
             f.Add(new(Severity.Good, "Everything looks healthy", "Temperatures, power settings and drivers are all within normal ranges."));
         return f.OrderByDescending(x => x.Level).ToList();
+    }
+
+    // Hot while doing little: the case where one background process is usually to blame.
+    public static bool IsIdleHeat(double cpu, double load) => cpu >= 80 && load < 25;
+
+    static Finding Culprit(double cpu, Hog h)
+    {
+        var level = cpu >= 95 ? Severity.Critical : Severity.Warning;
+        var title = $"{h.Name} is heating the CPU to {cpu:0} °C";
+        // WmiPrvSE serves other programs' WMI queries; stopping it does nothing, the program behind it starts it again.
+        return h.Name.Equals("WmiPrvSE", StringComparison.OrdinalIgnoreCase)
+            ? new(level, title, $"Windows' WMI service is using {h.Cores:0.0} cores with nothing else running. A background utility is flooding it with queries; on Alienware laptops Alienware Command Center's process monitor does exactly this. Close or uninstall vendor utilities one by one until it drops.")
+            : new(level, title, $"It is using {h.Cores:0.0} cores while the rest of the laptop is idle. If you don't need it right now, stop it.", h);
     }
 
     // The headline: a critical finding speaks for itself; several issues get a count; otherwise the top finding.

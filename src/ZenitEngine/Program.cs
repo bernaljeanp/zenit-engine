@@ -18,6 +18,12 @@ var json = new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScrip
 if (args is ["--selftest"]) { Catalog.SelfTest(); Console.WriteLine("selftest ok"); return; }
 if (args is ["--serve"]) { Engine.Serve(); return; } // elevated hardware service for unelevated callers
 if (args is ["--drivers", ..]) { Console.WriteLine(JsonSerializer.Serialize(Drivers.Scan(online: !args.Contains("--offline")), json)); return; }
+if (args is ["--lights", var lightColor, ..])
+{
+    try { Lighting.Set(lightColor, args is [_, _, var level] && int.TryParse(level, out var b) ? b : 100); }
+    catch (Exception e) when (e is ArgumentException or PlatformNotSupportedException or IOException) { Console.Error.WriteLine(e.Message); Environment.ExitCode = 1; }
+    return;
+}
 if (args is ["--thermal", ..] && args.Length <= 2)
 {
     try
@@ -304,6 +310,11 @@ static class Catalog
         Check(Dell.Applicable(dellXml, [Gpu("32.0.15.9190")]) is [{ Name: "NVIDIA Graphics Driver", Installed: "32.0.15.9190", Url: "https://downloads.dell.com/F/1/nv.exe" }],
             "older driver gets Dell's package, BIOS is skipped");
         Check(Dell.Applicable(dellXml, [Gpu("32.0.16.1714")]).Length == 0, "newer installed driver is kept");
+
+        List<Game> installed = [new("steam", "steam:730", "Counter-Strike 2", "", @"C:\Steam\common\CS2"), new("xbox", "xbox:Roblox_55nm", "Roblox", "", @"C:\XboxGames\Roblox")];
+        Check(GameWatcher.Match(@"C:\Steam\common\CS2\game\bin\win64\cs2.exe", null, installed)?.Id == "steam:730", "game process matched by install folder");
+        Check(GameWatcher.Match(@"C:\XboxGames\Roblox\Content\RobloxPlayerBeta.exe", "Roblox_55nm", installed)?.Id == "xbox:Roblox_55nm", "packaged game matched by family");
+        Check(GameWatcher.Match(@"C:\Steam\common\CS2-Tools\x.exe", null, installed) is null && GameWatcher.Match(null, null, installed) is null, "other processes are not games");
 
         Check(PowerMode.For("performance") == PowerMode.Best && PowerMode.For("quiet") == PowerMode.Efficiency
               && PowerMode.For("balanced") == Guid.Empty, "power mode mapping");

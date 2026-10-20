@@ -1,3 +1,5 @@
+<img src="docs/icon.png" width="96" alt="">
+
 # Zenit Engine
 
 [![Build](https://github.com/bernaljeanp/zenit-engine/actions/workflows/build.yml/badge.svg)](https://github.com/bernaljeanp/zenit-engine/actions/workflows/build.yml)
@@ -14,10 +16,18 @@ and the laptop went back to **58-66 °C at idle**. That is the idea: tell you wh
 
 ## What it does
 
-- **Thermal profile per game.** Launch a game through Zenit and it switches to performance (balanced-performance
-  on battery), or to the profile you picked for that game; quit and it restores what you had.
-- **Live readings.** CPU and GPU temperature, fan speeds and the active profile, read from the laptop's own
-  firmware interface.
+- **Thermal profile per game, automatic.** Start a game from any launcher (Steam, Epic, GOG, Xbox, Ubisoft, Riot)
+  and Zenit switches to performance (balanced-performance on battery), or to the profile you picked for that game;
+  quit and it restores what you had. It costs nothing while you play: a process list every few seconds, each new
+  process checked once by its folder. Alienware Command Center's process monitor ran a WMI query for every process
+  start and stop instead, and kept a CPU core and a half busy on the test laptop.
+- **Live readings and a plain-language diagnosis.** CPU and GPU temperature, fan speeds and the active profile, read
+  from the laptop's own firmware interface. When the CPU runs hot while doing little, Zenit names the process behind
+  it and offers to stop it.
+- **Lighting without Alienware Command Center.** Keyboard and logo color and brightness, sent straight to the
+  AlienFX "AW-ELC" controller over USB HID and restored at sign-in. Protocol from
+  [alienfx-tools](https://github.com/T-Troll/alienfx-tools) (MIT).
+- **In the tray.** Starts with Windows next to the clock: temperatures in the tooltip, profiles one click away.
 - **Driver updates, official sources only.** Lists devices Windows reports as failing (error codes, "Degraded")
   and vendor drivers for physical hardware older than three years. **Update drivers** installs official updates from
   two places: the Windows Update driver catalog (packages Intel, NVIDIA, Dell and the other makers publish for your
@@ -67,6 +77,7 @@ $z = "$env:LOCALAPPDATA\Programs\ZenitEngine\ZenitEngine.exe"
 & $z --drivers                       # driver check (add --offline to skip Windows Update)
 & $z                                 # installed games (Steam, Epic, GOG, Xbox, Ubisoft, Riot) as JSON
 & $z --launch steam:730              # launch with the game's thermal profile; restores the previous one on exit
+& $z --lights 8EC5FF 80              # keyboard and logo color (RRGGBB) and brightness (0-100)
 & $z --game-profile steam:730 quiet  # remember a profile for a game
 ```
 

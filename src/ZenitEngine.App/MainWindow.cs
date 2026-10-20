@@ -29,11 +29,20 @@ sealed class MainWindow : Window
     readonly WrapPanel profiles = new();
     readonly StackPanel driverList = new() { Spacing = 14 };
     readonly TextBlock driverStatus = T(14, Palette.Muted, wrap: true);
+    readonly Border gameChip = new() { CornerRadius = new CornerRadius(999), Padding = new Thickness(12, 5), BorderThickness = new Thickness(1), BorderBrush = Palette.Hot, IsVisible = false };
+    readonly TextBlock gameText = T(13, Palette.Ink);
+    readonly WrapPanel swatches = new();
+    readonly Slider brightness = new() { Minimum = 0, Maximum = 100, Value = 100 };
+    readonly TextBlock lightNote = T(13, Palette.Muted, wrap: true);
 
     Status? status;
     double load;
     PowerPlan? plan;
     DriverReport? drivers;
+    Hog? hog;
+    string? game, lightColor;
+    DispatcherTimer? brightnessDelay;
+    bool loadingLights;
     bool windowsUpdateChecked, scanning, installing, polling, closed;
     string? shownProfiles;
     double warmTarget;
@@ -51,7 +60,8 @@ sealed class MainWindow : Window
             Orientation = Orientation.Horizontal, Spacing = 14, VerticalAlignment = VerticalAlignment.Center,
             Children = { new Wordmark { Scale = 0.2, Fill = Palette.Ink, VerticalAlignment = VerticalAlignment.Center }, Label("ENGINE") },
         };
-        var engine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { engineDot, engineText }, VerticalAlignment = VerticalAlignment.Center };
+        gameChip.Child = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new Border { Width = 6, Height = 6, CornerRadius = new CornerRadius(3), Background = Palette.Hot, VerticalAlignment = VerticalAlignment.Center }, Label("IN GAME"), gameText } };
+        var engine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { gameChip, new Border { Width = 10 }, engineDot, engineText }, VerticalAlignment = VerticalAlignment.Center };
         DockPanel.SetDock(engine, Dock.Right);
         var header = new DockPanel { Margin = new Thickness(32, 20, 32, 0), Children = { engine, brand } };
 
@@ -68,8 +78,18 @@ sealed class MainWindow : Window
         temps.Children.AddRange([Reading(cpuTemp, "CPU"), gpuBlock, cpuLoad]);
         var readings = new StackPanel { Spacing = 18, Children = { temps, graph, T(13, Palette.Muted, "CPU temperature, last 60 seconds. The dashed line is 105 °C, where the chip slows itself down.", wrap: true) } };
 
-        var profileBody = new StackPanel { Spacing = 8, Children = { profiles, T(13, Palette.Muted, "Games launched through Zenit switch to their profile automatically and put this one back when you quit.", wrap: true) } };
-        var right = new StackPanel { Spacing = 20, Children = { Card("Thermal profile", profileBody), Card("Fans", fans) } };
+        var profileBody = new StackPanel { Spacing = 8, Children = { profiles, T(13, Palette.Muted, "Zenit spots a game when it starts, from any launcher, switches to its profile and puts this one back when you quit.", wrap: true) } };
+        foreach (var (name, hex) in LightPresets) swatches.Children.Add(Swatch(name, hex));
+        brightness.ValueChanged += (_, _) =>
+        {
+            if (loadingLights) return;
+            // Apply once the slider settles: each change is several USB reports to the lighting controller.
+            brightnessDelay?.Stop();
+            brightnessDelay = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) => { brightnessDelay?.Stop(); _ = ApplyLights(lightColor); });
+            brightnessDelay.Start();
+        };
+        var lightBody = new StackPanel { Spacing = 14, Children = { swatches, new DockPanel { Children = { Docked(T(13, Palette.Muted, "Brightness"), Dock.Left, new Thickness(0, 0, 14, 0)), brightness } }, lightNote } };
+        var right = new StackPanel { Spacing = 20, Children = { Card("Thermal profile", profileBody), Card("Fans", fans), Card("Lighting", lightBody) } };
 
         var driverActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         driverActions.Children.Add(Action("Scan again", () => _ = ScanDrivers(false)));
@@ -95,7 +115,7 @@ sealed class MainWindow : Window
 
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         timer.Tick += (_, _) => Poll();
-        Opened += (_, _) => { RequestAnimationFrame(Frame); Poll(); timer.Start(); _ = ScanDrivers(false); };
+        Opened += (_, _) => { RequestAnimationFrame(Frame); Poll(); timer.Start(); _ = ScanDrivers(false); _ = LoadLights(); };
         Closed += (_, _) => { closed = true; timer.Stop(); };
     }
 
@@ -120,19 +140,26 @@ sealed class MainWindow : Window
         try
         {
             var refreshPlan = tick++ % 20 == 0;
-            (status, load, plan) = await Task.Run(() => (Machine.EngineStatus(), SafeLoad(), refreshPlan ? SafePlan() : plan));
+            (status, load, plan, game) = await Task.Run(() => (Machine.EngineStatus(), SafeLoad(), refreshPlan ? SafePlan() : plan, SafeGame()));
+            // Who is to blame, every 5 s and only while the CPU is hot doing little.
+            var hot = status?.TempsC.TryGetValue("cpu", out var c) == true && Diagnosis.IsIdleHeat(c, load);
+            if (!hot) hog = null;
+            else if (tick % 5 == 0) hog = await Task.Run(() => { try { return Machine.TopProcess(); } catch { return null; } });
             Update();
         }
         finally { polling = false; }
     }
 
     static double SafeLoad() { try { return Machine.CpuLoad(); } catch { return 0; } }
+    static string? SafeGame() { try { return Machine.RunningGame(); } catch { return null; } }
     static PowerPlan? SafePlan() { try { return Machine.ActivePowerPlan(); } catch { return null; } }
 
     void Update()
     {
         engineDot.Background = status is null ? Palette.Hot : Palette.Ok;
         engineText.Text = status is null ? "Engine not running" : "Engine running";
+        gameChip.IsVisible = game is not null;
+        gameText.Text = game ?? "";
 
         if (status is not null && status.TempsC.TryGetValue("cpu", out var cpu))
         {
@@ -171,13 +198,85 @@ sealed class MainWindow : Window
             if (profiles.Children.Count == 0) profiles.Children.Add(T(14, Palette.Muted, "Profiles appear when the Engine is running.", wrap: true));
         }
 
-        var list = Diagnosis.Evaluate(status, load, plan, drivers);
+        var list = Diagnosis.Evaluate(status, load, plan, drivers, hog);
         var summary = Diagnosis.Summarize(list);
         headline.Text = summary.Title;
         explanation.Text = summary.Detail;
         headlineStripe.Background = Palette.For(summary.Level);
         findings.Children.Clear();
         foreach (var f in list.Where(f => f != summary)) findings.Children.Add(Row(f.Level, f.Title, f.Detail));
+        if (list.FirstOrDefault(f => f.End is not null)?.End is { } end)
+            findings.Children.Add(new StackPanel { Children = { Action($"Stop {end.Name}", () => Stop(end)) } });
+    }
+
+    // Curated, not a rainbow picker: colors that read well through keycaps and the logo diffuser.
+    static readonly (string Name, string Hex)[] LightPresets =
+    [
+        ("Zenith", "8EC5FF"), ("Ice", "E6F2FF"), ("Ember", "FF5A1F"), ("Crimson", "FF1E3C"),
+        ("Solar", "FFB000"), ("Plasma", "B04BFF"), ("Toxic", "39FF88"), ("Off", "000000"),
+    ];
+
+    Control Swatch(string name, string hex)
+    {
+        var off = hex == "000000";
+        var color = Color.Parse("#" + hex);
+        var dot = new Border
+        {
+            Width = 30, Height = 30, CornerRadius = new CornerRadius(15),
+            Background = off ? Brushes.Transparent : new SolidColorBrush(color),
+            BorderBrush = Palette.Muted, BorderThickness = new Thickness(off ? 1.5 : 0),
+            BoxShadow = off ? default : new BoxShadows(new BoxShadow { Blur = 18, Spread = 1, Color = Color.FromArgb(0x70, color.R, color.G, color.B) }),
+        };
+        var ring = new Border
+        {
+            Width = 40, Height = 40, CornerRadius = new CornerRadius(20), BorderThickness = new Thickness(2), Tag = hex,
+            BorderBrush = Brushes.Transparent, Child = dot, Cursor = new Cursor(StandardCursorType.Hand), Margin = new Thickness(0, 0, 8, 8),
+        };
+        ToolTip.SetTip(ring, name);
+        ring.PointerPressed += (_, _) => _ = ApplyLights(hex);
+        return ring;
+    }
+
+    void ShowLights()
+    {
+        foreach (var s in swatches.Children.OfType<Border>())
+            s.BorderBrush = (string?)s.Tag == lightColor ? Palette.Ink : Brushes.Transparent;
+    }
+
+    async Task LoadLights()
+    {
+        var saved = await Task.Run(() => { try { return Machine.Lights(); } catch { return null; } });
+        loadingLights = true;
+        if (saved is not null) brightness.Value = saved.Brightness;
+        loadingLights = false;
+        lightColor = saved is null ? LightPresets[0].Hex : saved.Brightness == 0 ? "000000" : saved.Color;
+        lightNote.Text = "Keyboard and logo. Zenit talks to the AlienFX controller directly, no Alienware Command Center needed, and puts your color back at sign-in.";
+        ShowLights();
+    }
+
+    async Task ApplyLights(string? hex)
+    {
+        if (hex is null) return;
+        lightColor = hex;
+        ShowLights();
+        var off = hex == "000000";
+        var level = off ? 0 : (int)brightness.Value;
+        var error = await Task.Run(() => { try { return Machine.SetLights(off ? "FFFFFF" : hex, level); } catch (Exception e) { return e.Message; } });
+        if (error is not null) lightNote.Text = error;
+    }
+
+    static Control Docked(Control c, Dock dock, Thickness margin)
+    {
+        DockPanel.SetDock(c, dock);
+        c.Margin = margin;
+        c.VerticalAlignment = VerticalAlignment.Center;
+        return c;
+    }
+
+    void Stop(Hog h)
+    {
+        try { using var p = System.Diagnostics.Process.GetProcessById(h.Pid); p.Kill(); hog = null; Update(); }
+        catch (Exception e) { explanation.Text = $"Couldn't stop {h.Name}: {e.Message}"; }
     }
 
     async Task SetProfile(string profile)

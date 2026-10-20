@@ -5,7 +5,9 @@ using System.Text.Json;
 
 // Zenit Engine's privileged half. ZenitEngine --serve runs elevated at sign-in (a scheduled task, so no UAC prompt)
 // and answers over a local named pipe; only hardware control lives here, everything else stays unprivileged.
-// Protocol: one text line per connection ("status", "set <profile>" or "install-drivers"), one JSON line back.
+// Protocol: one text line per connection, one JSON line back: "status", "set <profile>", "install-drivers", "game"
+// (the game the watcher sees running), "lights" (saved color) or "lights <RRGGBB> <0-100>".
+// It also runs the game watcher and restores the lighting at sign-in.
 static class Engine
 {
     const string PipeName = "ZenitEngine";
@@ -18,6 +20,9 @@ static class Engine
         // More instances of the pipe (one per concurrent request) only from an elevated token: a non-elevated
         // process could otherwise add its own instance and pose as the Engine.
         security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), PipeAccessRights.CreateNewInstance, AccessControlType.Allow));
+        GameWatcher.Start();
+        // The lighting controller forgets its colors at power-off; put the user's back at sign-in.
+        try { Lighting.Restore(); } catch (Exception e) when (e is IOException or PlatformNotSupportedException or ArgumentException) { }
         while (true)
         {
             var pipe = NamedPipeServerStreamAcl.Create(PipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
@@ -52,6 +57,10 @@ static class Engine
             {
                 case ["status"]: return JsonSerializer.Serialize(Thermal.Read());
                 case ["set", var profile]: Thermal.Set(profile); return """{"ok":true}""";
+                case ["game"]: return JsonSerializer.Serialize(new { Game = GameWatcher.Current?.Title });
+                case ["lights"]: return JsonSerializer.Serialize(Lighting.Saved());
+                case ["lights", var light] when light.Split(' ') is [var color, var level] && int.TryParse(level, out var brightness):
+                    Lighting.Set(color, brightness); return """{"ok":true}""";
                 case ["install-drivers"]:
                     if (!Monitor.TryEnter(InstallLock)) return """{"error":"an install is already running"}""";
                     try { return JsonSerializer.Serialize(Drivers.Install()); }

@@ -143,16 +143,22 @@ static class Session
 
     static bool IsGame(int pid, string dir, string? family)
     {
+        var (path, package) = Identify(pid);
+        return IsUnder(path, dir) || (family is not null && package == family);
+    }
+
+    // Image path and package family (null when not packaged or not readable), with one process handle.
+    public static (string? Path, string? Family) Identify(int pid)
+    {
         var h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-        if (h == IntPtr.Zero) return false;
+        if (h == IntPtr.Zero) return (null, null);
         try
         {
             var sb = new StringBuilder(1024);
             int len = sb.Capacity;
-            if (QueryFullProcessImageName(h, 0, sb, ref len) && IsUnder(sb.ToString(), dir)) return true;
-            if (family is null) return false;
+            var path = QueryFullProcessImageName(h, 0, sb, ref len) ? sb.ToString() : null;
             uint flen = (uint)sb.Capacity;
-            return GetPackageFamilyName(h, ref flen, sb) == 0 && sb.ToString() == family;
+            return (path, GetPackageFamilyName(h, ref flen, sb) == 0 ? sb.ToString() : null);
         }
         finally { CloseHandle(h); }
     }
