@@ -27,8 +27,9 @@ static class Hotkeys
 
     static string Name(string profile) => profile switch
     {
-        "balanced-performance" => "Balanced+", "low-power" => "Battery saver",
-        _ => profile.Length > 0 ? char.ToUpperInvariant(profile[0]) + profile[1..] : profile,
+        "performance" => Lang.T("Performance", "Rendimiento"), "balanced-performance" => Lang.T("Balanced+", "Equilibrado+"),
+        "balanced" => Lang.T("Balanced", "Equilibrado"), "cool" => Lang.T("Cool", "Fresco"), "quiet" => Lang.T("Quiet", "Silencioso"),
+        "low-power" => Lang.T("Battery saver", "Ahorro de batería"), _ => profile,
     };
 
     public static void Start() => new Thread(Run) { IsBackground = true, Name = "Hotkeys" }.Start();
@@ -51,8 +52,8 @@ static class Hotkeys
         switch (key)
         {
             case Boost:
-                if (beforeBoost is null) { beforeBoost = Thermal.Current(); Thermal.Set("performance"); Notify("Performance Boost", "On · fans and clocks up"); }
-                else { Thermal.Set(beforeBoost); Notify("Performance Boost", $"Off · back to {Name(beforeBoost)}"); beforeBoost = null; }
+                if (beforeBoost is null) { beforeBoost = Thermal.Current(); Thermal.Set("performance"); Notify("Performance Boost", Lang.T("On · fans and clocks up", "Activado · ventiladores y frecuencias al máximo")); }
+                else { Thermal.Set(beforeBoost); Notify("Performance Boost", Lang.T($"Off · back to {Name(beforeBoost)}", $"Desactivado · vuelve a {Name(beforeBoost)}")); beforeBoost = null; }
                 break;
             case Stealth:
                 var saved = Lighting.Saved() ?? new Lighting.State("FFFFFF", 100);
@@ -61,13 +62,13 @@ static class Hotkeys
                     beforeStealth = Thermal.Current();
                     Lighting.Set("FFFFFF", 15, remember: false);
                     Thermal.Set("quiet");
-                    Notify("Stealth", "On · dim lights, Quiet profile");
+                    Notify("Stealth", Lang.T("On · dim lights, Quiet profile", "Activado · luces tenues, perfil Silencioso"));
                 }
                 else
                 {
                     Lighting.Set(saved.Color, saved.Brightness);
                     Thermal.Set(beforeStealth);
-                    Notify("Stealth", $"Off · {Name(beforeStealth)} and your lights back");
+                    Notify("Stealth", Lang.T($"Off · {Name(beforeStealth)} and your lights back", $"Desactivado · {Name(beforeStealth)} y tus luces de vuelta"));
                     beforeStealth = null;
                 }
                 break;
@@ -75,7 +76,7 @@ static class Hotkeys
                 var now = Lighting.Saved() ?? new Lighting.State("FFFFFF", 100);
                 var level = Lighting.NextLevel(now.Brightness);
                 Lighting.Set(now.Color, level);
-                Notify("Keyboard lights", level switch { 0 => "Off", < 100 => "Low", _ => "Full" });
+                Notify(Lang.T("Keyboard lights", "Luces del teclado"), level switch { 0 => Lang.T("Off", "Apagadas"), < 100 => Lang.T("Low", "Bajas"), _ => Lang.T("Full", "Altas") });
                 break;
         }
     }

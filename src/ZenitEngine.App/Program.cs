@@ -21,7 +21,8 @@ sealed class App : Application
     public static EventWaitHandle? ShowSignal;
 
     static readonly (string Id, string Name)[] TrayProfiles =
-        [("performance", "Performance"), ("balanced-performance", "Balanced+"), ("balanced", "Balanced"), ("quiet", "Quiet"), ("cool", "Cool")];
+        [("performance", Lang.T("Performance", "Rendimiento")), ("balanced-performance", Lang.T("Balanced+", "Equilibrado+")), ("balanced", Lang.T("Balanced", "Equilibrado")),
+         ("quiet", Lang.T("Quiet", "Silencioso")), ("cool", Lang.T("Cool", "Fresco"))];
 
     MainWindow? window;
     TrayIcon? tray;
@@ -44,11 +45,11 @@ sealed class App : Application
             if (!StartHidden) window.Show();
 
             var menu = new NativeMenu();
-            menu.Add(Item("Open Zenit", Show));
+            menu.Add(Item(Lang.T("Open Zenit", "Abrir Zenit"), Show));
             menu.Add(new NativeMenuItemSeparator());
             foreach (var (id, name) in TrayProfiles) menu.Add(Item(name, () => Task.Run(() => Machine.SetProfile(id))));
             menu.Add(new NativeMenuItemSeparator());
-            menu.Add(Item("Quit", () => { quitting = true; tray?.Dispose(); desktop.Shutdown(); }));
+            menu.Add(Item(Lang.T("Quit", "Salir"), () => { quitting = true; tray?.Dispose(); desktop.Shutdown(); }));
             tray = new TrayIcon { Icon = icon, ToolTipText = "Zenit Engine", Menu = menu, IsVisible = true };
             tray.Clicked += (_, _) => Show();
             TrayIcon.SetIcons(this, [tray]);
@@ -91,7 +92,7 @@ sealed class App : Application
     {
         try
         {
-            if (Machine.EngineStatus() is not { } s) return "Zenit Engine · Engine not running";
+            if (Machine.EngineStatus() is not { } s) return Lang.T("Zenit Engine · Engine not running", "Zenit Engine · Engine detenido");
             var parts = new List<string> { "Zenit" };
             if (s.TempsC.TryGetValue("cpu", out var cpu)) parts.Add($"CPU {cpu:0}°");
             if (s.TempsC.TryGetValue("gpu", out var gpu)) parts.Add($"GPU {gpu:0}°");

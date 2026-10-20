@@ -44,12 +44,12 @@ static class Machine
     // Null when applied, otherwise what went wrong.
     public static string? SetLights(string color, int brightness) =>
         Ask($"lights {color} {brightness}") is { } json && json.Contains("\"ok\"") ? null
-            : "The lighting controller didn't answer. It needs the Engine running on an Alienware laptop with AlienFX lighting.";
+            : Lang.T("The lighting controller didn't answer. It needs the Engine running on an Alienware laptop with AlienFX lighting.", "El controlador de luces no respondió. Necesita el Engine en marcha en un Alienware con luces AlienFX.");
 
     // Installing needs admin, so the Engine does it. Throws with the Engine's message on failure.
     public static InstallResult InstallDrivers()
     {
-        var json = Ask("install-drivers") ?? throw new InvalidOperationException("The Engine isn't running. Reinstall with install.ps1.");
+        var json = Ask("install-drivers") ?? throw new InvalidOperationException(Lang.T("The Engine isn't running. Reinstall with install.ps1.", "El Engine no está en marcha. Reinstala con install.ps1."));
         using var doc = JsonDocument.Parse(json);
         if (doc.RootElement.TryGetProperty("error", out var error)) throw new InvalidOperationException(error.GetString());
         return doc.RootElement.Deserialize<InstallResult>(Json)!;
@@ -70,13 +70,20 @@ static class Machine
         catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException) { return null; }
     }
 
-    // Formatted counters through WMI: the classic performance counter names are localized ("% de tiempo de procesador").
+    // CPU load from GetSystemTimes deltas between calls: no WMI, so polling it every second costs nothing.
+    static (ulong Idle, ulong Total)? lastTimes;
     public static double CpuLoad()
     {
-        using var searcher = new ManagementObjectSearcher("SELECT PercentProcessorTime FROM Win32_PerfFormattedData_PerfOS_Processor WHERE Name='_Total'");
-        foreach (var o in searcher.Get()) return Convert.ToDouble(o["PercentProcessorTime"]);
-        return 0;
+        if (!GetSystemTimes(out var idle, out var kernel, out var user)) return 0;
+        var now = (Idle: idle, Total: kernel + user); // kernel time includes idle time
+        var prev = lastTimes;
+        lastTimes = now;
+        if (prev is not { } p || now.Total <= p.Total) return 0;
+        return Math.Clamp(100.0 * (1 - (double)(now.Idle - p.Idle) / (now.Total - p.Total)), 0, 100);
     }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    static extern bool GetSystemTimes(out ulong idle, out ulong kernel, out ulong user);
 
     public static PowerPlan? ActivePowerPlan()
     {
@@ -126,23 +133,27 @@ static class Diagnosis
     {
         var f = new List<Finding>();
         if (status is null)
-            f.Add(new(Severity.Critical, "Zenit Engine isn't running",
-                "Temperatures and thermal profiles come from the Engine, which starts when you sign in. Run install.ps1 again, or sign out and back in."));
+            f.Add(new(Severity.Critical, Lang.T("Zenit Engine isn't running", "Zenit Engine no está en marcha"),
+                Lang.T("Temperatures and thermal profiles come from the Engine, which starts when you sign in. Run install.ps1 again, or sign out and back in.",
+                       "Las temperaturas y los perfiles térmicos vienen del Engine, que arranca al iniciar sesión. Ejecuta install.ps1 de nuevo, o cierra sesión y vuelve a entrar.")));
         else if (status.TempsC.TryGetValue("cpu", out var cpu))
         {
             if (IsIdleHeat(cpu, load) && hog is { Cores: >= 0.3 } h)
                 f.Add(Culprit(cpu, h));
             else if (cpu >= 95 && load < 15)
-                f.Add(new(Severity.Critical, $"CPU at {cpu:0} °C with almost nothing running",
-                    $"That is close to its 105 °C limit while the CPU is only {load:0} % busy. Usual causes: a power plan that keeps the CPU at full speed, something stuck after days without a restart, or dust and dried thermal paste."));
+                f.Add(new(Severity.Critical, Lang.T($"CPU at {cpu:0} °C with almost nothing running", $"CPU a {cpu:0} °C casi sin uso"),
+                    Lang.T($"That is close to its 105 °C limit while the CPU is only {load:0} % busy. Usual causes: a power plan that keeps the CPU at full speed, something stuck after days without a restart, or dust and dried thermal paste.",
+                           $"Está cerca de su límite de 105 °C con la CPU ocupada solo al {load:0} %. Causas habituales: un plan de energía que la mantiene a fondo, algo trabado tras días sin reiniciar, o polvo y pasta térmica seca.")));
             else if (cpu >= 90)
-                f.Add(new(Severity.Info, $"CPU at {cpu:0} °C under load",
-                    "Normal while gaming for a laptop CPU of this class. The Performance profile spins the fans up sooner."));
+                f.Add(new(Severity.Info, Lang.T($"CPU at {cpu:0} °C under load", $"CPU a {cpu:0} °C con carga"),
+                    Lang.T("Normal while gaming for a laptop CPU of this class. The Performance profile spins the fans up sooner.",
+                           "Normal al jugar para una CPU de portátil de esta clase. El perfil Rendimiento acelera antes los ventiladores.")));
         }
 
         if (plan is { MinProcessorAc: >= 100 })
-            f.Add(new(Severity.Warning, $"The \"{plan.Name}\" power plan never lets the CPU slow down",
-                "Its minimum processor state is 100 % on the charger, so the CPU stays at full clock even when idle: heat and fan noise for nothing. Press Win+R, type powercfg.cpl and choose Balanced. Games still get full speed."));
+            f.Add(new(Severity.Warning, Lang.T($"The \"{plan.Name}\" power plan never lets the CPU slow down", $"El plan de energía \"{plan.Name}\" nunca deja que la CPU baje"),
+                Lang.T("Its minimum processor state is 100 % on the charger, so the CPU stays at full clock even when idle: heat and fan noise for nothing. Press Win+R, type powercfg.cpl and choose Balanced. Games still get full speed.",
+                       "Su estado mínimo del procesador es 100 % con el cargador, así que la CPU queda a fondo incluso en reposo: calor y ruido para nada. Pulsa Win+R, escribe powercfg.cpl y elige Equilibrado. Los juegos siguen a toda velocidad.")));
 
         if (drivers is not null)
         {
@@ -150,22 +161,29 @@ static class Diagnosis
             foreach (var g in drivers.Problems.GroupBy(Explain))
                 f.Add(g.Count() == 1
                     ? new(Severity.Warning, g.First().Name, g.Key)
-                    : new(Severity.Warning, $"{g.Count()} drivers report the same problem", string.Join(", ", g.Select(d => d.Name)) + ". " + g.Key));
+                    : new(Severity.Warning, Lang.T($"{g.Count()} drivers report the same problem", $"{g.Count()} controladores informan el mismo problema"), string.Join(", ", g.Select(d => d.Name)) + ". " + g.Key));
             if (drivers.Outdated.Length > 0)
-                f.Add(new(Severity.Info, $"{drivers.Outdated.Length} device drivers are over three years old",
-                    string.Join(", ", drivers.Outdated.Take(3).Select(d => d.Name)) + ". Look for newer versions on the laptop maker's support page."));
+                f.Add(new(Severity.Info, Lang.T($"{drivers.Outdated.Length} device drivers are over three years old", $"{drivers.Outdated.Length} controladores tienen más de tres años"),
+                    string.Join(", ", drivers.Outdated.Take(3).Select(d => d.Name)) + Lang.T(". Look for newer versions on the laptop maker's support page.", ". Busca versiones nuevas en la página de soporte del fabricante.")));
             if (drivers.Maker is { Length: > 0 } maker)
-            f.Add(new(Severity.Info, $"{maker.Length} driver updates from the laptop maker",
-                string.Join(", ", maker.Take(3).Select(p => p.Name)) + ". Official packages, verified before they install. Press Update drivers."));
-        if (drivers.Available.Length > 0)
-                f.Add(new(Severity.Info, $"{drivers.Available.Length} driver updates on Windows Update",
-                    "Official drivers from the hardware makers. Press Update drivers to install them."));
+                f.Add(new(Severity.Info, Lang.T($"{maker.Length} driver updates from the laptop maker", $"{maker.Length} actualizaciones del fabricante"),
+                    string.Join(", ", maker.Take(3).Select(p => p.Name)) + Lang.T(". Official packages, verified before they install. Press Update drivers.", ". Paquetes oficiales, verificados antes de instalarse. Pulsa Actualizar controladores.")));
+            if (drivers.Available.Length > 0)
+                f.Add(new(Severity.Info, Lang.T($"{drivers.Available.Length} driver updates on Windows Update", $"{drivers.Available.Length} actualizaciones en Windows Update"),
+                    Lang.T("Official drivers from the hardware makers. Press Update drivers to install them.", "Controladores oficiales de los fabricantes. Pulsa Actualizar controladores para instalarlos.")));
         }
 
         if (f.Count == 0)
-            f.Add(new(Severity.Good, "Everything looks healthy", "Temperatures, power settings and drivers are all within normal ranges."));
+            f.Add(new(Severity.Good, Lang.T("Everything looks healthy", "Todo se ve sano"),
+                Lang.T("Temperatures, power settings and drivers are all within normal ranges.", "Temperaturas, energía y controladores dentro de lo normal.")));
         return f.OrderByDescending(x => x.Level).ToList();
     }
+
+    static readonly HashSet<string> WindowsCore = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "System", "Registry", "Memory Compression", "Secure System", "Interrupts", "smss", "csrss", "wininit", "winlogon",
+        "services", "lsass", "svchost", "dwm", "MsMpEng", "SearchIndexer", "TiWorker", "TrustedInstaller", "audiodg",
+    };
 
     // Hot while doing little: the case where one background process is usually to blame.
     public static bool IsIdleHeat(double cpu, double load) => cpu >= 80 && load < 25;
@@ -173,11 +191,17 @@ static class Diagnosis
     static Finding Culprit(double cpu, Hog h)
     {
         var level = cpu >= 95 ? Severity.Critical : Severity.Warning;
-        var title = $"{h.Name} is heating the CPU to {cpu:0} °C";
+        var title = Lang.T($"{h.Name} is heating the CPU to {cpu:0} °C", $"{h.Name} está calentando la CPU a {cpu:0} °C");
+        // Windows' own processes are never offered for stopping: the kernel and services can't be, or shouldn't be.
+        if (WindowsCore.Contains(h.Name))
+            return new(level, title, Lang.T($"Windows itself is using {h.Cores:0.0} cores with the laptop idle. This is usually a driver busy in the background (graphics, Wi-Fi, storage) or a Windows task such as indexing or a Defender scan. If it lasts more than a few minutes, restart, and check the drivers below.",
+                                             $"El propio Windows usa {h.Cores:0.0} núcleos con el equipo en reposo. Suele ser un controlador ocupado en segundo plano (gráficos, Wi-Fi, almacenamiento) o una tarea de Windows como la indexación o un análisis de Defender. Si dura más de unos minutos, reinicia y revisa los controladores de abajo."));
         // WmiPrvSE serves other programs' WMI queries; stopping it does nothing, the program behind it starts it again.
         return h.Name.Equals("WmiPrvSE", StringComparison.OrdinalIgnoreCase)
-            ? new(level, title, $"Windows' WMI service is using {h.Cores:0.0} cores with nothing else running. A background utility is flooding it with queries; on Alienware laptops Alienware Command Center's process monitor does exactly this. Close or uninstall vendor utilities one by one until it drops.")
-            : new(level, title, $"It is using {h.Cores:0.0} cores while the rest of the laptop is idle. If you don't need it right now, stop it.", h);
+            ? new(level, title, Lang.T($"Windows' WMI service is using {h.Cores:0.0} cores with nothing else running. A background utility is flooding it with queries; on Alienware laptops Alienware Command Center's process monitor does exactly this. Close or uninstall vendor utilities one by one until it drops.",
+                                       $"El servicio WMI de Windows usa {h.Cores:0.0} núcleos sin nada más en marcha. Una utilidad en segundo plano lo inunda de consultas; en los Alienware lo hace el monitor de procesos de Alienware Command Center. Cierra o desinstala utilidades del fabricante una por una hasta que baje."))
+            : new(level, title, Lang.T($"It is using {h.Cores:0.0} cores while the rest of the laptop is idle. If you don't need it right now, stop it.",
+                                       $"Usa {h.Cores:0.0} núcleos mientras el resto del equipo está en reposo. Si no lo necesitas ahora, detenlo."), h);
     }
 
     // The headline: a critical finding speaks for itself; several issues get a count; otherwise the top finding.
@@ -186,18 +210,20 @@ static class Diagnosis
         if (list[0].Level == Severity.Critical) return list[0];
         var attention = list.Count(f => f.Level >= Severity.Warning);
         return attention > 1
-            ? new(Severity.Warning, $"{attention} things need your attention", "Most urgent first. Each one says what it means and what to do.")
+            ? new(Severity.Warning, Lang.T($"{attention} things need your attention", $"{attention} cosas necesitan tu atención"),
+                Lang.T("Most urgent first. Each one says what it means and what to do.", "Lo más urgente primero. Cada una explica qué significa y qué hacer."))
             : list[0];
     }
 
     static string Explain(Device d) => d.Status.Equals("Degraded", StringComparison.OrdinalIgnoreCase)
-        ? "The driver is loaded but part of it isn't working. This usually clears after updating the chipset and platform drivers from the laptop maker."
+        ? Lang.T("The driver is loaded but part of it isn't working. This usually clears after updating the chipset and platform drivers from the laptop maker.",
+                 "El controlador está cargado pero una parte no funciona. Suele resolverse al actualizar los controladores de chipset y plataforma del fabricante.")
         : d.ProblemCode switch
         {
-            28 => "No driver is installed for this device.",
-            10 => "The device couldn't start.",
-            22 => "This device is disabled in Device Manager.",
-            43 => "Windows stopped the device after it reported a problem.",
-            _ => $"Windows reports status \"{d.Status}\" (code {d.ProblemCode}).",
+            28 => Lang.T("No driver is installed for this device.", "Este dispositivo no tiene controlador instalado."),
+            10 => Lang.T("The device couldn't start.", "El dispositivo no pudo iniciarse."),
+            22 => Lang.T("This device is disabled in Device Manager.", "Este dispositivo está deshabilitado en el Administrador de dispositivos."),
+            43 => Lang.T("Windows stopped the device after it reported a problem.", "Windows detuvo el dispositivo porque informó un problema."),
+            _ => Lang.T($"Windows reports status \"{d.Status}\" (code {d.ProblemCode}).", $"Windows informa el estado \"{d.Status}\" (código {d.ProblemCode})."),
         };
 }

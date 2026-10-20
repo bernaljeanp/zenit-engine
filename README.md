@@ -31,6 +31,9 @@ and the laptop went back to **58-66 °C at idle**. That is the idea: tell you wh
   to need Alienware Command Center; the firmware sends them as hidden F17-F20 keys, and Zenit handles them and shows
   a short on-screen notice.
 - **In the tray.** Starts with Windows next to the clock: temperatures in the tooltip, profiles one click away.
+- **An instrument cluster, not a settings page.** Heat dials, a mode bar, the last minute of CPU heat and the fans,
+  drawn on the GPU with Skia shaders. It watches its own cost: shader layers are cached on the GPU, about 15 % of one core while focused, nothing in the tray.
+- **Speaks your language.** English or Spanish, picked from the Windows display language, notices included.
 - **Driver updates, official sources only.** Lists devices Windows reports as failing (error codes, "Degraded")
   and vendor drivers for physical hardware older than three years. **Update drivers** installs official updates from
   two places: the Windows Update driver catalog (packages Intel, NVIDIA, Dell and the other makers publish for your
