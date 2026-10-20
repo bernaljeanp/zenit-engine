@@ -25,8 +25,8 @@ sealed class App : Application
          ("quiet", Lang.T("Quiet", "Silencioso")), ("cool", Lang.T("Cool", "Fresco"))];
 
     MainWindow? window;
+    WindowIcon? icon;
     TrayIcon? tray;
-    bool quitting;
 
     public override void Initialize()
     {
@@ -38,18 +38,15 @@ sealed class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var icon = new WindowIcon(AssetLoader.Open(new Uri("avares://ZenitEngine.App/Assets/zenit.ico")));
-            window = new MainWindow { Icon = icon };
-            // Closing hides to the tray; only Quit ends the app.
-            window.Closing += (_, e) => { if (!quitting) { e.Cancel = true; window.Hide(); } };
-            if (!StartHidden) window.Show();
+            icon = new WindowIcon(AssetLoader.Open(new Uri("avares://ZenitEngine.App/Assets/zenit.ico")));
+            if (!StartHidden) Show();
 
             var menu = new NativeMenu();
             menu.Add(Item(Lang.T("Open Zenit", "Abrir Zenit"), Show));
             menu.Add(new NativeMenuItemSeparator());
             foreach (var (id, name) in TrayProfiles) menu.Add(Item(name, () => Task.Run(() => Machine.SetProfile(id))));
             menu.Add(new NativeMenuItemSeparator());
-            menu.Add(Item(Lang.T("Quit", "Salir"), () => { quitting = true; tray?.Dispose(); desktop.Shutdown(); }));
+            menu.Add(Item(Lang.T("Quit", "Salir"), () => { tray?.Dispose(); desktop.Shutdown(); }));
             tray = new TrayIcon { Icon = icon, ToolTipText = "Zenit Engine", Menu = menu, IsVisible = true };
             tray.Clicked += (_, _) => Show();
             TrayIcon.SetIcons(this, [tray]);
@@ -72,13 +69,29 @@ sealed class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
+    // The window exists only while it is open: closing it goes back to the tray and frees the window, its shader
+    // caches and its timers, so the app in the tray is just the icon, the tooltip timer and the notice listener.
     void Show()
     {
-        if (window is null) return;
+        if (window is null)
+        {
+            window = new MainWindow { Icon = icon };
+            window.Closed += (_, _) =>
+            {
+                window = null;
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                SetProcessWorkingSetSize(System.Diagnostics.Process.GetCurrentProcess().Handle, -1, -1); // hand the pages back now
+            };
+        }
         window.Show();
         if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
         window.Activate();
     }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    static extern bool SetProcessWorkingSetSize(nint process, nint min, nint max);
 
     static NativeMenuItem Item(string header, Action onClick)
     {
