@@ -36,7 +36,9 @@ jobs:
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; if ($LASTEXITCODE) { exit 1 } }
           & $iscc "/DAppVersion=$env:VERSION" installer\ZenitEngine.iss
           if ($LASTEXITCODE) { exit 1 }
-          Get-ChildItem dist\*.exe | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content dist\SHA256SUMS.txt
+          # LF line endings, the format sha256sum -c expects
+          $sums = Get-ChildItem dist\*.exe | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)" }
+          [IO.File]::WriteAllText("$PWD\dist\SHA256SUMS.txt", ($sums -join "`n") + "`n")
           Get-Content dist\SHA256SUMS.txt
       - name: GitHub release
         shell: pwsh
