@@ -62,6 +62,7 @@ sealed class MainWindow : Window
     readonly StackPanel languageChoices = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
     readonly StackPanel gameRows = new() { Spacing = 10 };
     BatteryCharge? battery;
+    readonly Queue<double> recentCpu = new(); // the last 15 s of CPU temperature
     readonly ScrollViewer scroller = new();
 
     // The settings are the last panel: scroll to the end once the layout has its size, and again once the game list
@@ -277,8 +278,13 @@ sealed class MainWindow : Window
         {
             var refreshPlan = tick++ % 20 == 0;
             (status, load, plan, game) = await Task.Run(() => (Machine.EngineStatus(), SafeLoad(), refreshPlan ? SafePlan() : plan, SafeGame()));
-            // Who is to blame, every 5 s and only while the CPU is hot doing little.
-            var hot = status?.TempsC.TryGetValue("cpu", out var c) == true && Diagnosis.IsIdleHeat(c, load);
+            if (status?.TempsC.TryGetValue("cpu", out var reading) == true)
+            {
+                recentCpu.Enqueue(reading);
+                if (recentCpu.Count > 15) recentCpu.Dequeue();
+            }
+            // Who is to blame, every 5 s and only while the CPU stays hot doing little.
+            var hot = recentCpu.Count > 0 && Diagnosis.IsIdleHeat(recentCpu.Min(), load);
             if (!hot) hog = null;
             else if (tick % 5 == 0) hog = await Task.Run(() => { try { return Machine.TopProcess(); } catch { return null; } });
             Update();
@@ -333,7 +339,11 @@ sealed class MainWindow : Window
             BuildModes(running ? status!.Profiles : [], running ? status!.Profile : null);
         }
 
-        var list = Diagnosis.Evaluate(status, load, plan, drivers, hog);
+        // The diagnosis judges the lowest CPU reading of the last 15 s: this class of CPU jumps to 90-100 °C for a
+        // second or two whenever a core boosts, which is normal; heat that holds is what matters. The dial stays live.
+        var steady = status is not null && recentCpu.Count > 0
+            ? status with { TempsC = new(status.TempsC) { ["cpu"] = recentCpu.Min() } } : status;
+        var list = Diagnosis.Evaluate(steady, load, plan, drivers, hog);
         var summary = Diagnosis.Summarize(list);
         headline.Text = summary.Title;
         explanation.Text = summary.Detail;
