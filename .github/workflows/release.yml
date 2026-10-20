@@ -1,0 +1,45 @@
+name: Release
+
+# Push a tag like v0.1.0: self-test, publish both programs self-contained, build ZenitSetup-<version>.exe with
+# Inno Setup and attach it, with its SHA-256, to a GitHub release. Notes come from docs/release-notes.md.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Version from the tag
+        shell: pwsh
+        run: echo "VERSION=$('${{ github.ref_name }}'.TrimStart('v'))" >> $env:GITHUB_ENV
+      - name: Self-test
+        run: dotnet run --project src/ZenitEngine -c Release -- --selftest
+      - name: Publish
+        shell: pwsh
+        run: |
+          foreach ($p in 'ZenitEngine', 'ZenitEngine.App') {
+            dotnet publish "src/$p" -c Release -r win-x64 --self-contained -o publish -p:Version=$env:VERSION -nologo
+            if ($LASTEXITCODE) { exit 1 }
+          }
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; if ($LASTEXITCODE) { exit 1 } }
+          & $iscc "/DAppVersion=$env:VERSION" installer\ZenitEngine.iss
+          if ($LASTEXITCODE) { exit 1 }
+          Get-ChildItem dist\*.exe | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content dist\SHA256SUMS.txt
+          Get-Content dist\SHA256SUMS.txt
+      - name: GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create $env:GITHUB_REF_NAME (Get-ChildItem dist\*).FullName --title "Zenit Engine $env:VERSION" --notes-file docs\release-notes.md

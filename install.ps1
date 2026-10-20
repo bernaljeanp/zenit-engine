@@ -1,6 +1,6 @@
-# Installs Zenit Engine: publishes it self-contained (no .NET runtime needed afterwards) to
-# %LOCALAPPDATA%\Programs\ZenitEngine and registers the Engine to start elevated at sign-in.
-# Needs admin rights once per run; it elevates itself.
+# Developer install from source: publishes Zenit Engine self-contained to Program Files and registers the Engine to
+# start elevated at sign-in, the same layout as the release installer (installer\ZenitEngine.iss). Needs the .NET 10
+# SDK and admin rights once per run; it elevates itself. Users should run the setup from GitHub Releases instead.
 #   .\install.ps1              install or update
 #   .\install.ps1 -Uninstall   remove the program and the sign-in task (keeps %LOCALAPPDATA%\Zenit)
 param(
@@ -25,17 +25,14 @@ if (-not $admin) {
     return
 }
 
-$Target = Join-Path $env:LOCALAPPDATA 'Programs\ZenitEngine'
-$Exe = Join-Path $Target 'ZenitEngine.exe'
-$Shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Zenit Engine.lnk'
+# Program Files: only administrators can write there, and the Engine runs elevated at sign-in.
+$Target = Join-Path $env:ProgramFiles 'Zenit Engine'
+$Task = Join-Path $PSScriptRoot 'installer\engine-task.ps1'
+$Shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Zenit Engine.lnk'
 $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
-# Stop the running Engine so its files can be replaced or removed.
-Get-ScheduledTask -TaskPath '\Zenit\' -TaskName Engine -ErrorAction SilentlyContinue | Stop-ScheduledTask
-Get-CimInstance Win32_Process -Filter "Name = 'ZenitEngine.exe' OR Name = 'ZenitEngine.App.exe'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-
 if ($Uninstall) {
-    Unregister-ScheduledTask -TaskPath '\Zenit\' -TaskName Engine -Confirm:$false -ErrorAction SilentlyContinue
+    & $Task -Uninstall
     Remove-Item $Target -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $Shortcut -Force -ErrorAction SilentlyContinue
     Remove-ItemProperty $RunKey -Name 'Zenit Engine' -ErrorAction SilentlyContinue
@@ -43,27 +40,18 @@ if ($Uninstall) {
     return
 }
 
+& $Task -Stop # files in use can't be replaced
 foreach ($project in 'ZenitEngine', 'ZenitEngine.App') {
     dotnet publish (Join-Path $PSScriptRoot "src\$project") -c Release -r win-x64 --self-contained -o $Target -nologo -v q
     if ($LASTEXITCODE) { throw "dotnet publish $project failed (is the .NET 10 SDK installed?)" }
 }
+& $Task -Exe (Join-Path $Target 'ZenitEngine.exe')
 
-# Start menu entry for the app.
 $link = (New-Object -ComObject WScript.Shell).CreateShortcut($Shortcut)
 $link.TargetPath = Join-Path $Target 'ZenitEngine.App.exe'
 $link.WorkingDirectory = $Target
 $link.Save()
 # The app starts with Windows in the tray: temperature in the tooltip, profiles one click away.
 Set-ItemProperty $RunKey -Name 'Zenit Engine' -Value "`"$(Join-Path $Target 'ZenitEngine.App.exe')`" --tray"
-
-# The Engine runs elevated in this user's session at sign-in. Interactive logon type: no password is stored and
-# there is no UAC prompt at each sign-in. conhost --headless keeps the console app from opening a window, which
-# would also kill the Engine if someone closed it.
-$action = New-ScheduledTaskAction -Execute (Join-Path $env:WINDIR 'System32\conhost.exe') -Argument "--headless `"$Exe`" --serve"
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
-$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Highest
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
-Register-ScheduledTask -TaskPath '\Zenit\' -TaskName Engine -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-Start-ScheduledTask -TaskPath '\Zenit\' -TaskName Engine
 
 "Zenit Engine installed in $Target and running. Open it from the Start menu." | Tee-Object -FilePath $Log

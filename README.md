@@ -61,23 +61,33 @@ and the laptop went back to **58-66 °C at idle**. That is the idea: tell you wh
 
 ## Install
 
-Requires Windows 10 version 2004 or Windows 11, and the [.NET 10 SDK](https://dotnet.microsoft.com/download) to build.
+Download **`ZenitSetup-<version>.exe`** from [Releases](../../releases/latest) and run it. It needs Windows 10 version
+2004 or Windows 11 (64-bit), asks for administrator rights once, installs to `C:\Program Files\Zenit Engine`, starts
+the Engine at sign-in and puts Zenit in the tray. Uninstall it from Settings > Apps.
+
+Releases are not code-signed yet (a free certificate from SignPath Foundation has been requested), so Windows SmartScreen
+may warn the first time: **More info > Run anyway**. Every release is built from this repository by GitHub Actions and
+ships with `SHA256SUMS.txt`.
+
+### From source
+
+With the [.NET 10 SDK](https://dotnet.microsoft.com/download):
 
 ```powershell
 git clone https://github.com/bernaljeanp/zenit-engine.git
 cd zenit-engine
-.\install.ps1          # asks for admin once
+.\install.ps1          # same layout as the installer; asks for admin once
+.\install.ps1 -Uninstall
 ```
 
-It publishes a self-contained build to `%LOCALAPPDATA%\Programs\ZenitEngine` and registers the Engine to start
-at sign-in, and adds **Zenit Engine** to the Start menu. To remove it: `.\install.ps1 -Uninstall` (your per-game profiles in `%LOCALAPPDATA%\Zenit` are kept).
+Your settings and per-game profiles in `%LOCALAPPDATA%\Zenit` are kept on uninstall.
 
 ## Command line
 
 Everything the app shows is also available as JSON:
 
 ```powershell
-$z = "$env:LOCALAPPDATA\Programs\ZenitEngine\ZenitEngine.exe"
+$z = "$env:ProgramFiles\Zenit Engine\ZenitEngine.exe"
 & $z --thermal                       # profiles, fans and temperatures as JSON
 & $z --thermal performance           # switch the thermal profile
 & $z --drivers                       # driver check (add --offline to skip Windows Update)
