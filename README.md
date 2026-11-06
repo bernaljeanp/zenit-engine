@@ -95,6 +95,10 @@ cd zenit-engine
 
 Your settings and per-game profiles in `%LOCALAPPDATA%\Zenit` are kept on uninstall.
 
+## Linux / Bazzite
+
+The Linux port lives in [Antu OS](https://github.com/bernaljeanp/antu-os), using kernel interfaces instead of Windows WMI. See its [standalone Bazzite installation guide](https://github.com/bernaljeanp/antu-os/blob/main/docs/zenit-bazzite.md). Hardware support depends on the kernel and firmware; it has not yet been validated on the requested Alienware laptop. The projects in this repository remain Windows applications.
+
 ## Command line
 
 Everything the app shows is also available as JSON:
